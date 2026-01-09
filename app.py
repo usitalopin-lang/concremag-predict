@@ -8,59 +8,109 @@ from utils.gemini_analyzer import GeminiAnalyzer
 # Configuración de página
 st.set_page_config(page_title="Concremag - Gestión de Activos", page_icon="🏗️", layout="wide")
 
-# CSS Personalizado para look PRO
+# CSS Personalizado para look PRO Concremag
 st.markdown("""
 <style>
-    /* Fondo con gradiente */
+    /* Fondo gris oscuro corporativo */
     .stApp {
-        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        background-color: #2B2B2B;
     }
-
-    /* Tarjetas de métricas más atractivas */
+    
+    /* Tarjetas de métricas estilo Concremag */
     [data-testid="stMetricValue"] {
-        font-size: 2.5rem;
+        font-size: 2.8rem;
         font-weight: 700;
-        color: #FFD700;
+        color: #00D4FF;
     }
-
-    /* Títulos más impactantes */
+    
+    [data-testid="stMetricLabel"] {
+        color: #B0B0B0;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+    }
+    
+    /* Títulos con cyan corporativo */
     h1 {
-        color: #FFD700 !important;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        font-size: 3rem !important;
+        color: #00D4FF !important;
+        font-size: 2.5rem !important;
+        font-weight: 700 !important;
     }
-
-    h2, h3 {
-        color: #FFA500 !important;
+    
+    h2 {
+        color: #FFFFFF !important;
+        font-size: 1.8rem !important;
     }
-
-    /* Sidebar más elegante */
+    
+    h3 {
+        color: #00D4FF !important;
+        font-size: 1.3rem !important;
+    }
+    
+    /* Sidebar gris oscuro */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+        background-color: #1E1E1E;
+        border-right: 2px solid #00D4FF;
     }
-
-    /* Botones más llamativos */
+    
+    /* Botones estilo Concremag */
     .stButton>button {
-        background: linear-gradient(90deg, #FF6B35 0%, #F7931E 100%);
-        color: white;
+        background: linear-gradient(90deg, #00D4FF 0%, #00A8CC 100%);
+        color: #1E1E1E;
         font-weight: bold;
-        border-radius: 10px;
+        border-radius: 8px;
         border: none;
-        padding: 0.5rem 2rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        padding: 0.6rem 2rem;
+        box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
         transition: all 0.3s;
+        text-transform: uppercase;
+        font-size: 0.9rem;
     }
-
+    
     .stButton>button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+        box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
+        background: linear-gradient(90deg, #00E5FF 0%, #00D4FF 100%);
     }
-
+    
+    /* Tarjetas con bordes cyan */
+    .element-container {
+        border-radius: 8px;
+    }
+    
     /* Tablas más profesionales */
     .dataframe {
-        border-radius: 10px;
+        border-radius: 8px;
         overflow: hidden;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        background-color: #3A3A3A !important;
+    }
+    
+    /* Expanders estilo corporativo */
+    .streamlit-expanderHeader {
+        background-color: #3A3A3A;
+        border-left: 4px solid #00D4FF;
+        border-radius: 4px;
+        font-weight: 600;
+    }
+    
+    /* Texto general */
+    p, span, div {
+        color: #E0E0E0;
+    }
+    
+    /* Alertas rojas para críticos */
+    .stAlert {
+        background-color: #3A3A3A;
+        border-left: 4px solid #FF3B3B;
+    }
+    
+    /* Radio buttons en sidebar */
+    [data-testid="stSidebar"] .stRadio > label {
+        color: #B0B0B0;
+    }
+    
+    [data-testid="stSidebar"] .stRadio > div {
+        color: #FFFFFF;
     }
 </style>
 """, unsafe_allow_html=True)
