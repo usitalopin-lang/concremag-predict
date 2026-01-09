@@ -184,10 +184,10 @@ try:
                          'health_score', 'horizonte_meses', 'accion']].copy()
 
         # Formatear
-        display_df['health_score'] = display_df['health_score'].round(1)
-        display_df['horizonte_meses'] = display_df['horizonte_meses'].round(0)
+display_df['health_score'] = display_df['health_score'].round(1)
+display_df['horizonte_meses'] = display_df['horizonte_meses'].round(0)
 
-        # Colorear
+# Colorear
 def color_health(val):
     if val < 40:
         return 'background-color: #4A1F1F; color: #FF6B6B'  # Rojo oscuro
@@ -196,11 +196,11 @@ def color_health(val):
     else:
         return 'background-color: #1F4A2F; color: #6BCF7F'  # Verde oscuro
 
-        try:
-            styled_df = display_df.style.applymap(color_health, subset=['health_score'])
-            st.dataframe(styled_df, use_container_width=True, height=400)
-        except:
-            st.dataframe(display_df, use_container_width=True, height=400)
+try:
+    styled_df = display_df.style.applymap(color_health, subset=['health_score'])
+    st.dataframe(styled_df, use_container_width=True, height=400)
+except:
+    st.dataframe(display_df, use_container_width=True, height=400)
 
         # Gráficos
         col1, col2 = st.columns(2)
