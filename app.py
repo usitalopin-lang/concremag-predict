@@ -188,13 +188,13 @@ try:
         display_df['horizonte_meses'] = display_df['horizonte_meses'].round(0)
 
         # Colorear
-        def color_health(val):
-            if val < 40:
-                return 'background-color: #ffcccc'
-            elif val < 70:
-                return 'background-color: #fff4cc'
-            else:
-                return 'background-color: #ccffcc'
+def color_health(val):
+    if val < 40:
+        return 'background-color: #4A1F1F; color: #FF6B6B'  # Rojo oscuro
+    elif val < 70:
+        return 'background-color: #4A3F1F; color: #FFD93D'  # Amarillo oscuro
+    else:
+        return 'background-color: #1F4A2F; color: #6BCF7F'  # Verde oscuro
 
         try:
             styled_df = display_df.style.applymap(color_health, subset=['health_score'])
