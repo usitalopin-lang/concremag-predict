@@ -140,6 +140,20 @@ except Exception as e:
 
 # Sidebar
 st.sidebar.title("📊 Navegación")
+
+# Botón de recarga con timestamp
+if st.sidebar.button("🔄 Recargar Datos", type="primary"):
+    st.rerun()
+
+# Mostrar última actualización
+from datetime import datetime
+import pytz
+
+chile_tz = pytz.timezone('America/Punta_Arenas')
+ultima_actualizacion = datetime.now(chile_tz).strftime("%d/%m/%Y - %H:%M:%S")
+st.sidebar.caption(f"🕒 Última actualización:\n{ultima_actualizacion}")
+st.sidebar.markdown("---")
+
 view_mode = st.sidebar.radio(
     "Selecciona una vista",
     ["Dashboard", "Acciones Prioritarias", "Detalle por Activo", "Análisis IA"]
