@@ -97,11 +97,11 @@ Genera un análisis de 150-200 palabras con:
             return f"Error al analizar activo: {str(e)}"
 
     def custom_query(self, activos_df, mantenimiento_df, costos_df, question):
-        """
-        Responde preguntas personalizadas con acceso a todas las hojas
-        """
-        # Preparar contexto completo
-        activos_context = activos_df[['id_activo', 'tipo_equipo', 'health_score', 'edad_anos', 'accion']].to_string()
+    """
+    Responde preguntas personalizadas con acceso a todas las hojas
+    """
+    # Preparar contexto completo (solo columnas que existen en todas las hojas)
+    activos_context = activos_df[['id_activo', 'tipo_equipo', 'marca', 'modelo', 'edad_anos']].to_string()
         
         prompt = f"""
 Eres un experto en gestión de maquinaria pesada para construcción y hormigón.
