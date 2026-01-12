@@ -8,54 +8,76 @@ from utils.gemini_analyzer import GeminiAnalyzer
 # Configuración de página
 st.set_page_config(page_title="Concremag - Gestión de Activos", page_icon="🏗️", layout="wide")
 
-# CSS Personalizado para look PRO Concremag
-st.markdown("""
+# ============================================
+# TOGGLE DARK/LIGHT MODE
+# ============================================
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'dark'
+
+def toggle_theme():
+    st.session_state.theme = 'light' if st.session_state.theme == 'dark' else 'dark'
+
+# CSS Dinámico según tema
+if st.session_state.theme == 'dark':
+    bg_color = "#2B2B2B"
+    text_color = "#E0E0E0"
+    card_bg = "#3A3A3A"
+    sidebar_bg = "#1E1E1E"
+    accent_color = "#00D4FF"
+else:
+    bg_color = "#F5F5F5"
+    text_color = "#2B2B2B"
+    card_bg = "#FFFFFF"
+    sidebar_bg = "#E8E8E8"
+    accent_color = "#0077B6"
+
+st.markdown(f"""
 <style>
-    /* Fondo gris oscuro corporativo */
-    .stApp {
-        background-color: #2B2B2B;
-    }
+    /* Fondo principal */
+    .stApp {{
+        background-color: {bg_color};
+    }}
     
-    /* Tarjetas de métricas estilo Concremag */
-    [data-testid="stMetricValue"] {
+    /* Tarjetas de métricas */
+    [data-testid="stMetricValue"] {{
         font-size: 2.8rem;
         font-weight: 700;
-        color: #00D4FF;
-    }
+        color: {accent_color};
+    }}
     
-    [data-testid="stMetricLabel"] {
-        color: #B0B0B0;
+    [data-testid="stMetricLabel"] {{
+        color: {text_color};
         font-size: 0.9rem;
         text-transform: uppercase;
-    }
+    }}
     
-    /* Títulos con cyan corporativo */
-    h1 {
-        color: #00D4FF !important;
+    /* Títulos */
+    h1 {{
+        color: {accent_color} !important;
         font-size: 2.5rem !important;
         font-weight: 700 !important;
-    }
+    }}
     
-    h2 {
-        color: #FFFFFF !important;
+    h2 {{
+        color: {text_color} !important;
         font-size: 1.8rem !important;
-    }
+    }}
     
-    h3 {
-        color: #00D4FF !important;
+    h3 {{
+        color: {accent_color} !important;
         font-size: 1.3rem !important;
-    }
+    }}
     
-    /* Sidebar gris oscuro */
-    [data-testid="stSidebar"] {
-        background-color: #1E1E1E;
-        border-right: 2px solid #00D4FF;
-    }
+    /* Sidebar */
+    [data-testid="stSidebar"] {{
+        background-color: {sidebar_bg};
+        border-right: 2px solid {accent_color};
+    }}
     
-    /* Botones estilo Concremag */
-    .stButton>button {
-        background: linear-gradient(90deg, #00D4FF 0%, #00A8CC 100%);
-        color: #1E1E1E;
+    /* Botones */
+    .stButton>button {{
+        background: linear-gradient(90deg, {accent_color} 0%, #00A8CC 100%);
+        color: {bg_color};
         font-weight: bold;
         border-radius: 8px;
         border: none;
@@ -64,64 +86,58 @@ st.markdown("""
         transition: all 0.3s;
         text-transform: uppercase;
         font-size: 0.9rem;
-    }
+    }}
     
-    .stButton>button:hover {
+    .stButton>button:hover {{
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
-        background: linear-gradient(90deg, #00E5FF 0%, #00D4FF 100%);
-    }
+    }}
     
-    /* Tarjetas con bordes cyan */
-    .element-container {
-        border-radius: 8px;
-    }
-    
-    /* Tablas más profesionales */
-    .dataframe {
+    /* Tablas */
+    .dataframe {{
         border-radius: 8px;
         overflow: hidden;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        background-color: #3A3A3A !important;
-    }
+        background-color: {card_bg} !important;
+    }}
     
-    /* Expanders estilo corporativo */
-    .streamlit-expanderHeader {
-        background-color: #3A3A3A;
-        border-left: 4px solid #00D4FF;
+    /* Expanders */
+    .streamlit-expanderHeader {{
+        background-color: {card_bg};
+        border-left: 4px solid {accent_color};
         border-radius: 4px;
         font-weight: 600;
-    }
+    }}
     
     /* Texto general */
-    p, span, div {
-        color: #E0E0E0;
-    }
-    
-    /* Alertas rojas para críticos */
-    .stAlert {
-        background-color: #3A3A3A;
-        border-left: 4px solid #FF3B3B;
-    }
+    p, span, div {{
+        color: {text_color};
+    }}
     
     /* Radio buttons en sidebar */
-    [data-testid="stSidebar"] .stRadio > label {
-        color: #B0B0B0;
-    }
+    [data-testid="stSidebar"] .stRadio > label {{
+        color: {text_color};
+    }}
     
-    [data-testid="stSidebar"] .stRadio > div {
-        color: #FFFFFF;
-    }
+    [data-testid="stSidebar"] .stRadio > div {{
+        color: {text_color};
+    }}
 </style>
 """, unsafe_allow_html=True)
 
 # Header con logo y diseño PRO
-col1, col2 = st.columns([1, 5])
+col1, col2, col3 = st.columns([1, 5, 1])
 with col1:
     st.markdown("# 🏗️")
 with col2:
     st.markdown("# Concremag S.A.")
     st.markdown("### 🤖 Sistema Inteligente de Gestión de Activos")
+with col3:
+    # Toggle de tema
+    theme_icon = "🌙" if st.session_state.theme == 'dark' else "☀️"
+    if st.button(theme_icon, key="theme_toggle"):
+        toggle_theme()
+        st.rerun()
 
 st.markdown("---")
 
@@ -325,7 +341,7 @@ try:
         else:
             st.info("No hay registros de mantenimiento para este activo.")
 
-    # ANÁLISIS IA
+    # ANÁLISIS IA (CORREGIDO)
     elif view_mode == "Análisis IA":
         st.subheader("🤖 Análisis con Gemini AI")
 
@@ -341,7 +357,8 @@ try:
         if analysis_type == "Resumen Ejecutivo":
             if st.button("🚀 Generar Resumen Ejecutivo", type="primary"):
                 with st.spinner("Analizando con Gemini..."):
-                    summary = gemini_analyzer.generate_executive_summary(df)
+                    # FIX: Pasar las 3 hojas
+                    summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
                     st.markdown(summary)
 
         elif analysis_type == "Activo Específico":
@@ -353,18 +370,20 @@ try:
             if st.button("🔍 Analizar Activo", type="primary"):
                 asset_data = df[df['id_activo'] == selected_asset].iloc[0]
                 with st.spinner("Analizando con Gemini..."):
-                    analysis = gemini_analyzer.analyze_asset(asset_data)
+                    # FIX: Pasar mantenimiento y costos
+                    analysis = gemini_analyzer.analyze_asset(asset_data, df_mantenimiento, df_costos_ref)
                     st.markdown(analysis)
 
         else:  # Pregunta Personalizada
             question = st.text_area(
                 "Escribe tu pregunta sobre la flota",
-                placeholder="Ej: ¿Qué mixers deberíamos reemplazar este año y por qué?"
+                placeholder="Ej: ¿Cuántos mantenimientos tuvo el camión tolva 01 en 2025?"
             )
 
             if st.button("💬 Consultar a Gemini", type="primary") and question:
                 with st.spinner("Consultando..."):
-                    answer = gemini_analyzer.custom_query(df, question)
+                    # FIX: Pasar las 3 hojas
+                    answer = gemini_analyzer.custom_query(df_activos, df_mantenimiento, df_costos_ref, question)
                     st.markdown(answer)
 
 except Exception as e:
