@@ -337,13 +337,14 @@ try:
         st.subheader("🔧 Historial de Mantenimiento")
         mant_activo = df_mantenimiento[df_mantenimiento['id_activo'] == selected_asset]
         if not mant_activo.empty:
-            st.dataframe(mant_activo, use_container_width=True)
+            # FIX: Agregar height fijo para evitar parpadeo
+            st.dataframe(mant_activo, use_container_width=True, height=300)
         else:
             st.info("No hay registros de mantenimiento para este activo.")
 
     # ANÁLISIS IA (CORREGIDO)
     elif view_mode == "Análisis IA":
-        st.subheader("🤖 Análisis con Gemini AI")
+        st.subheader("🤖 Análisis con AI")
 
         if not gemini_analyzer:
             st.warning("⚠️ Configura GEMINI_API_KEY en Secrets para activar esta función.")
