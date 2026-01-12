@@ -383,8 +383,8 @@ try:
 
             if st.button("💬 Consultar a Gemini", type="primary") and question:
                 with st.spinner("Consultando..."):
-                    # FIX: Pasar las 3 hojas
-                    answer = gemini_analyzer.custom_query(df_activos, df_mantenimiento, df_costos_ref, question)
+                    # FIX: Pasar df (con métricas calculadas) en lugar de df_activos
+                    answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
                     st.markdown(answer)
 
 except Exception as e:
