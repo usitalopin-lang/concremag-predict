@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_google_auth import Authenticate
+from streamlit_google_oauth import Authenticate
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
