@@ -1,14 +1,9 @@
 streamlit
 pandas
-numpy
-gspread
+plotly
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
 google-generativeai
-openpyxl
-matplotlib
-plotly
 pytz
-extra-streamlit-components
