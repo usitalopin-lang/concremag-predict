@@ -1,9 +1,12 @@
 import streamlit as st
-from streamlit_google_oauth import Authenticate
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import json
+from google_auth_oauthlib.flow import Flow
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 from utils.sheets_connector import SheetsConnector
 from utils.lifecycle_calculator import LifecycleCalculator
@@ -21,34 +24,80 @@ st.set_page_config(
 )
 
 # ============================================
+# CONFIGURACIÓN OAUTH
+# ============================================
+SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
+
+def get_oauth_flow():
+    """Crea el flujo OAuth con las credenciales de secrets"""
+    client_config = {
+        "web": {
+            "client_id": st.secrets["google_oauth"]["client_id"],
+            "client_secret": st.secrets["google_oauth"]["client_secret"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [st.secrets.get("redirect_uri", "http://localhost:8501")]
+        }
+    }
+    
+    flow = Flow.from_client_config(
+        client_config=client_config,
+        scopes=SCOPES,
+        redirect_uri=st.secrets.get("redirect_uri", "http://localhost:8501")
+    )
+    return flow
+
+# ============================================
 # AUTENTICACIÓN CON GOOGLE OAUTH
 # ============================================
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_email = None
+    st.session_state.user_name = None
 
-# Inicializar autenticador
-@st.cache_resource
-def get_authenticator():
-    return Authenticate(
-        secret_credentials_path=st.secrets["google_oauth"],
-        cookie_name='concremag_auth_cookie',
-        cookie_key=st.secrets["cookie_key"],
-        redirect_uri=st.secrets.get("redirect_uri", "http://localhost:8501"),
-    )
+# Verificar si hay código de autorización en la URL
+query_params = st.query_params
+if 'code' in query_params and not st.session_state.authenticated:
+    try:
+        flow = get_oauth_flow()
+        flow.fetch_token(code=query_params['code'])
+        
+        credentials = flow.credentials
+        request = google_requests.Request()
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token,
+            request,
+            st.secrets["google_oauth"]["client_id"]
+        )
+        
+        st.session_state.authenticated = True
+        st.session_state.user_email = id_info.get('email')
+        st.session_state.user_name = id_info.get('name')
+        
+        # Limpiar parámetros de la URL
+        st.query_params.clear()
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"Error en autenticación: {str(e)}")
+        st.session_state.authenticated = False
 
-authenticator = get_authenticator()
-
-# Verificar autenticación
-authenticator.check_authentification()
-
-# Si no está conectado, mostrar pantalla de login
-if not st.session_state.get('connected', False):
+# Si no está autenticado, mostrar botón de login
+if not st.session_state.authenticated:
     st.title("🏗️ Concremag Predict")
     st.subheader("Sistema Inteligente de Gestión de Activos")
     st.info("👉 Por favor inicia sesión con tu cuenta de Google autorizada")
+    
+    if st.button("🔐 Iniciar sesión con Google", type="primary"):
+        flow = get_oauth_flow()
+        auth_url, _ = flow.authorization_url(prompt='consent')
+        st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
+        st.stop()
+    
     st.stop()
 
-# Obtener información del usuario autenticado
-user_email = st.session_state['user_info'].get('email')
-user_name = st.session_state['user_info'].get('name')
+user_email = st.session_state.user_email
+user_name = st.session_state.user_name
 
 # ============================================
 # INICIALIZAR CONEXIONES
@@ -81,7 +130,11 @@ if not user_manager.is_authorized(user_email):
     st.error(f"❌ Acceso denegado para: {user_email}")
     st.warning("Contacta al administrador para solicitar acceso")
     st.info("📧 Administrador: cf.lopezgaete@gmail.com")
-    authenticator.logout()
+    if st.button("🚪 Cerrar sesión"):
+        st.session_state.authenticated = False
+        st.session_state.user_email = None
+        st.session_state.user_name = None
+        st.rerun()
     st.stop()
 
 # Obtener rol y permisos del usuario
@@ -99,7 +152,10 @@ with st.sidebar:
     st.write(f"🎭 Rol: **{user_role.upper()}**")
     st.write(f"🏢 {user_info['company']}")
     
-    if authenticator.logout():
+    if st.button("🚪 Cerrar sesión"):
+        st.session_state.authenticated = False
+        st.session_state.user_email = None
+        st.session_state.user_name = None
         st.rerun()
     
     st.divider()
