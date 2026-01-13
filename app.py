@@ -30,20 +30,22 @@ SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://w
 
 def get_oauth_flow():
     """Crea el flujo OAuth con las credenciales de secrets"""
+    redirect_uri = st.secrets.get("redirect_uri", "http://localhost:8501")
+    
     client_config = {
         "web": {
             "client_id": st.secrets["google_oauth"]["client_id"],
             "client_secret": st.secrets["google_oauth"]["client_secret"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [st.secrets.get("redirect_uri", "http://localhost:8501")]
+            "redirect_uris": [redirect_uri]
         }
     }
     
     flow = Flow.from_client_config(
         client_config=client_config,
         scopes=SCOPES,
-        redirect_uri=st.secrets.get("redirect_uri", "http://localhost:8501")
+        redirect_uri=redirect_uri
     )
     return flow
 
