@@ -1,12 +1,108 @@
 import streamlit as st
+from streamlit_google_auth import Authenticate
 import pandas as pd
-from datetime import datetime
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+
 from utils.sheets_connector import SheetsConnector
 from utils.lifecycle_calculator import LifecycleCalculator
 from utils.gemini_analyzer import GeminiAnalyzer
+from utils.user_manager import UserManager
 
-# Configuración de página
-st.set_page_config(page_title="Concremag - Gestión de Activos", page_icon="🏗️", layout="wide")
+# ============================================
+# CONFIGURACIÓN DE PÁGINA
+# ============================================
+st.set_page_config(
+    page_title="Concremag Predict - Gestión Inteligente de Activos",
+    page_icon="🏗️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ============================================
+# AUTENTICACIÓN CON GOOGLE OAUTH
+# ============================================
+
+# Inicializar autenticador
+@st.cache_resource
+def get_authenticator():
+    return Authenticate(
+        secret_credentials_path=st.secrets["google_oauth"],
+        cookie_name='concremag_auth_cookie',
+        cookie_key=st.secrets["cookie_key"],
+        redirect_uri=st.secrets.get("redirect_uri", "http://localhost:8501"),
+    )
+
+authenticator = get_authenticator()
+
+# Verificar autenticación
+authenticator.check_authentification()
+
+# Si no está conectado, mostrar pantalla de login
+if not st.session_state.get('connected', False):
+    st.title("🏗️ Concremag Predict")
+    st.subheader("Sistema Inteligente de Gestión de Activos")
+    st.info("👉 Por favor inicia sesión con tu cuenta de Google autorizada")
+    st.stop()
+
+# Obtener información del usuario autenticado
+user_email = st.session_state['user_info'].get('email')
+user_name = st.session_state['user_info'].get('name')
+
+# ============================================
+# INICIALIZAR CONEXIONES
+# ============================================
+@st.cache_resource
+def init_connections():
+    try:
+        GEMINI_API_KEY = st.secrets.get("gemini_api_key")
+        GOOGLE_SHEET_ID = st.secrets.get("spreadsheet_id")
+        
+        sheets = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
+        gemini = GeminiAnalyzer(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+        return sheets, gemini
+    except Exception as e:
+        st.error(f"Error al inicializar conexiones: {str(e)}")
+        return None, None
+
+sheets_connector, gemini_analyzer = init_connections()
+
+if not sheets_connector:
+    st.error("❌ No se pudo conectar a Google Sheets. Verifica tus credenciales.")
+    st.stop()
+
+# ============================================
+# CONTROL DE ACCESO
+# ============================================
+user_manager = UserManager(sheets_connector)
+
+if not user_manager.is_authorized(user_email):
+    st.error(f"❌ Acceso denegado para: {user_email}")
+    st.warning("Contacta al administrador para solicitar acceso")
+    st.info("📧 Administrador: cf.lopezgaete@gmail.com")
+    authenticator.logout()
+    st.stop()
+
+# Obtener rol y permisos del usuario
+user_info = user_manager.get_user_info(user_email)
+user_role = user_info['role']
+user_permissions = user_info['permissions']
+
+# ============================================
+# SIDEBAR - INFO DEL USUARIO
+# ============================================
+with st.sidebar:
+    st.success(f"✅ Conectado como:")
+    st.write(f"**{user_name}**")
+    st.write(f"📧 {user_email}")
+    st.write(f"🎭 Rol: **{user_role.upper()}**")
+    st.write(f"🏢 {user_info['company']}")
+    
+    if authenticator.logout():
+        st.rerun()
+    
+    st.divider()
 
 # ============================================
 # TOGGLE DARK/LIGHT MODE
@@ -125,7 +221,9 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# Header con logo y diseño PRO
+# ============================================
+# HEADER
+# ============================================
 col1, col2, col3 = st.columns([1, 5, 1])
 with col1:
     st.markdown("# 🏗️")
@@ -139,32 +237,22 @@ with col3:
         toggle_theme()
         st.rerun()
 
+# Mostrar permisos del usuario
+st.caption(f"👤 {user_name} | 🎭 {user_role.upper()} | 🔑 Permisos: {', '.join(user_permissions)}")
 st.markdown("---")
 
-# Inicializar conexiones
-try:
-    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
-    GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
-
-    sheets_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
-    calculator = LifecycleCalculator()
-    gemini_analyzer = GeminiAnalyzer(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
-
-except Exception as e:
-    st.error(f"❌ Error al inicializar conexiones: {str(e)}")
-    st.stop()
-
-# Sidebar
+# ============================================
+# SIDEBAR - NAVEGACIÓN
+# ============================================
 st.sidebar.title("📊 Navegación")
 
 # Botón de recarga con timestamp
 if st.sidebar.button("🔄 Recargar Datos", type="primary"):
+    st.cache_resource.clear()
     st.rerun()
 
 # Mostrar última actualización
-from datetime import datetime
 import pytz
-
 chile_tz = pytz.timezone('America/Punta_Arenas')
 ultima_actualizacion = datetime.now(chile_tz).strftime("%d/%m/%Y - %H:%M:%S")
 st.sidebar.caption(f"🕒 Última actualización:\n{ultima_actualizacion}")
@@ -175,21 +263,26 @@ view_mode = st.sidebar.radio(
     ["Dashboard", "Acciones Prioritarias", "Detalle por Activo", "Análisis IA"]
 )
 
-# Cargar datos
+# ============================================
+# CARGAR DATOS
+# ============================================
 try:
     with st.spinner("🔄 Cargando datos desde Google Sheets..."):
-        df_activos = sheets_conn.get_data("Activos")
-        df_mantenimiento = sheets_conn.get_data("Mantenimiento")
-        df_costos_ref = sheets_conn.get_data("Costos_Referencia")
+        df_activos = sheets_connector.get_data("Activos")
+        df_mantenimiento = sheets_connector.get_data("Mantenimiento")
+        df_costos_ref = sheets_connector.get_data("Costos_Referencia")
 
     if df_activos.empty:
         st.warning("⚠️ No hay datos en la hoja 'Activos'. Por favor, agrega información de activos.")
         st.stop()
 
     # Calcular métricas consolidadas
+    calculator = LifecycleCalculator()
     df = calculator.calcular_metricas_completas(df_activos, df_mantenimiento, df_costos_ref)
 
+    # ============================================
     # DASHBOARD
+    # ============================================
     if view_mode == "Dashboard":
         col1, col2, col3, col4 = st.columns(4)
 
@@ -245,7 +338,9 @@ try:
             health_by_type = df.groupby('tipo_equipo')['health_score'].mean().sort_values()
             st.bar_chart(health_by_type)
 
+    # ============================================
     # ACCIONES PRIORITARIAS
+    # ============================================
     elif view_mode == "Acciones Prioritarias":
         st.subheader("🚨 Acciones Prioritarias - Ranking de Urgencia")
 
@@ -287,7 +382,9 @@ try:
                     st.write(f"**Prioridad:** {rec['prioridad']}")
                 st.info(rec['detalle'])
 
+    # ============================================
     # DETALLE POR ACTIVO
+    # ============================================
     elif view_mode == "Detalle por Activo":
         st.subheader("🔍 Análisis Detallado")
 
@@ -337,17 +434,18 @@ try:
         st.subheader("🔧 Historial de Mantenimiento")
         mant_activo = df_mantenimiento[df_mantenimiento['id_activo'] == selected_asset]
         if not mant_activo.empty:
-            # FIX: Agregar height fijo para evitar parpadeo
             st.dataframe(mant_activo, use_container_width=True, height=300)
         else:
             st.info("No hay registros de mantenimiento para este activo.")
 
-    # ANÁLISIS IA (CORREGIDO)
+    # ============================================
+    # ANÁLISIS IA
+    # ============================================
     elif view_mode == "Análisis IA":
         st.subheader("🤖 Análisis con AI")
 
         if not gemini_analyzer:
-            st.warning("⚠️ Configura GEMINI_API_KEY en Secrets para activar esta función.")
+            st.warning("⚠️ Configura gemini_api_key en Secrets para activar esta función.")
             st.stop()
 
         analysis_type = st.radio(
@@ -358,7 +456,6 @@ try:
         if analysis_type == "Resumen Ejecutivo":
             if st.button("🚀 Generar Resumen Ejecutivo", type="primary"):
                 with st.spinner("Analizando con Gemini..."):
-                    # FIX: Pasar las 3 hojas
                     summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
                     st.markdown(summary)
 
@@ -371,7 +468,6 @@ try:
             if st.button("🔍 Analizar Activo", type="primary"):
                 asset_data = df[df['id_activo'] == selected_asset].iloc[0]
                 with st.spinner("Analizando con Gemini..."):
-                    # FIX: Pasar mantenimiento y costos
                     analysis = gemini_analyzer.analyze_asset(asset_data, df_mantenimiento, df_costos_ref)
                     st.markdown(analysis)
 
@@ -383,7 +479,6 @@ try:
 
             if st.button("💬 Consultar a Gemini", type="primary") and question:
                 with st.spinner("Consultando..."):
-                    # FIX: Pasar df (con métricas calculadas) en lugar de df_activos
                     answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
                     st.markdown(answer)
 
@@ -392,8 +487,39 @@ except Exception as e:
     st.info("**Posibles causas:**")
     st.write("1. Verifica que las credenciales en 'Secrets' estén correctas")
     st.write("2. Verifica que el Google Sheet esté compartido con la service account")
-    st.write("3. Verifica que las hojas se llamen exactamente: 'Activos', 'Mantenimiento', 'Costos_Referencia'")
+    st.write("3. Verifica que las hojas se llamen exactamente: 'Activos', 'Mantenimiento', 'Costos_Referencia', 'Usuarios'")
     st.write("4. Verifica que Google Sheets API y Google Drive API estén habilitadas")
+
+# ============================================
+# PANEL DE ADMINISTRACIÓN (solo para admins)
+# ============================================
+if user_manager.has_permission(user_email, 'manage_users'):
+    st.divider()
+    with st.expander("👥 Gestión de Usuarios (Admin)", expanded=False):
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.subheader("Usuarios Autorizados")
+        with col2:
+            if st.button("🔄 Recargar usuarios"):
+                user_manager.reload_users()
+                st.success("✅ Usuarios recargados")
+                st.rerun()
+        
+        # Mostrar usuarios actuales
+        users_df = pd.DataFrame([
+            {
+                'Email': email,
+                'Nombre': info['name'],
+                'Rol': info['role'],
+                'Empresa': info['company'],
+                'Permisos': ', '.join(info['permissions'])
+            }
+            for email, info in user_manager.list_users().items()
+        ])
+        st.dataframe(users_df, use_container_width=True)
+        
+        st.info("💡 **Para agregar/editar usuarios:** Edita la hoja 'Usuarios' en Google Sheets y presiona 'Recargar usuarios'")
 
 # Footer
 st.markdown("---")
