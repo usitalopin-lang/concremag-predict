@@ -3,10 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import json
-from google_auth_oauthlib.flow import Flow
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
+import hashlib
 
 from utils.sheets_connector import SheetsConnector
 from utils.lifecycle_calculator import LifecycleCalculator
@@ -24,82 +21,12 @@ st.set_page_config(
 )
 
 # ============================================
-# CONFIGURACIÓN OAUTH
-# ============================================
-SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
-
-def get_oauth_flow():
-    """Crea el flujo OAuth con las credenciales de secrets"""
-    redirect_uri = st.secrets.get("redirect_uri", "http://localhost:8501")
-    
-    client_config = {
-        "web": {
-            "client_id": st.secrets["google_oauth"]["client_id"],
-            "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [redirect_uri]
-        }
-    }
-    
-    flow = Flow.from_client_config(
-        client_config=client_config,
-        scopes=SCOPES,
-        redirect_uri=redirect_uri
-    )
-    return flow
-
-# ============================================
-# AUTENTICACIÓN CON GOOGLE OAUTH
+# AUTENTICACIÓN SIMPLE
 # ============================================
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user_email = None
     st.session_state.user_name = None
-
-# Verificar si hay código de autorización en la URL
-query_params = st.query_params
-if 'code' in query_params and not st.session_state.authenticated:
-    try:
-        flow = get_oauth_flow()
-        flow.fetch_token(code=query_params['code'])
-        
-        credentials = flow.credentials
-        request = google_requests.Request()
-        id_info = id_token.verify_oauth2_token(
-            credentials.id_token,
-            request,
-            st.secrets["google_oauth"]["client_id"]
-        )
-        
-        st.session_state.authenticated = True
-        st.session_state.user_email = id_info.get('email')
-        st.session_state.user_name = id_info.get('name')
-        
-        # Limpiar parámetros de la URL
-        st.query_params.clear()
-        st.rerun()
-        
-    except Exception as e:
-        st.error(f"Error en autenticación: {str(e)}")
-        st.session_state.authenticated = False
-
-# Si no está autenticado, mostrar botón de login
-if not st.session_state.authenticated:
-    st.title("🏗️ Concremag Predict")
-    st.subheader("Sistema Inteligente de Gestión de Activos")
-    st.info("👉 Por favor inicia sesión con tu cuenta de Google autorizada")
-    
-    if st.button("🔐 Iniciar sesión con Google", type="primary"):
-        flow = get_oauth_flow()
-        auth_url, _ = flow.authorization_url(prompt='consent')
-        st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
-        st.stop()
-    
-    st.stop()
-
-user_email = st.session_state.user_email
-user_name = st.session_state.user_name
 
 # ============================================
 # INICIALIZAR CONEXIONES
@@ -124,22 +51,46 @@ if not sheets_connector:
     st.stop()
 
 # ============================================
+# PANTALLA DE LOGIN
+# ============================================
+if not st.session_state.authenticated:
+    st.title("🏗️ Concremag Predict")
+    st.subheader("Sistema Inteligente de Gestión de Activos")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.info("👉 Inicia sesión con tu email autorizado")
+        
+        email_input = st.text_input("📧 Email", placeholder="tu@email.com")
+        
+        if st.button("🔐 Iniciar sesión", type="primary", use_container_width=True):
+            if email_input:
+                # Verificar si el usuario existe en Google Sheets
+                user_manager = UserManager(sheets_connector)
+                
+                if user_manager.is_authorized(email_input):
+                    user_info = user_manager.get_user_info(email_input)
+                    
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = email_input
+                    st.session_state.user_name = user_info['name']
+                    st.rerun()
+                else:
+                    st.error("❌ Email no autorizado. Contacta al administrador.")
+                    st.info("📧 Administrador: cf.lopezgaete@gmail.com")
+            else:
+                st.warning("⚠️ Por favor ingresa tu email")
+    
+    st.stop()
+
+user_email = st.session_state.user_email
+user_name = st.session_state.user_name
+
+# ============================================
 # CONTROL DE ACCESO
 # ============================================
 user_manager = UserManager(sheets_connector)
-
-if not user_manager.is_authorized(user_email):
-    st.error(f"❌ Acceso denegado para: {user_email}")
-    st.warning("Contacta al administrador para solicitar acceso")
-    st.info("📧 Administrador: cf.lopezgaete@gmail.com")
-    if st.button("🚪 Cerrar sesión"):
-        st.session_state.authenticated = False
-        st.session_state.user_email = None
-        st.session_state.user_name = None
-        st.rerun()
-    st.stop()
-
-# Obtener rol y permisos del usuario
 user_info = user_manager.get_user_info(user_email)
 user_role = user_info['role']
 user_permissions = user_info['permissions']
