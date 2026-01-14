@@ -24,37 +24,25 @@ st.set_page_config(
 # ============================================
 
 def get_secret(key_name):
-    """
-    Busca una clave en st.secrets, ya sea en la raíz o dentro 
-    de la sección [gcp_service_account] donde suelen quedar agrupadas.
-    """
-    # 1. Buscar en la raíz
+    """Busca una clave en st.secrets de forma robusta."""
     if key_name in st.secrets:
         return st.secrets[key_name]
-    
-    # 2. Buscar dentro de gcp_service_account (caso común al copiar/pegar toml)
     if "gcp_service_account" in st.secrets:
         if key_name in st.secrets["gcp_service_account"]:
             return st.secrets["gcp_service_account"][key_name]
-            
-    # 3. Buscar en variables de entorno (para local/docker)
     return os.getenv(key_name)
 
-# Recuperar credenciales de forma robusta
+# Recuperar credenciales
 SHEET_ID = get_secret("GOOGLE_SHEET_ID")
 API_KEY = get_secret("GEMINI_API_KEY")
 
 @st.cache_data(ttl=600, show_spinner=False)
 def load_data_from_sheets():
-    """
-    Carga los datos y los guarda en memoria por 10 minutos (ttl=600).
-    Esto evita llamadas excesivas a la API de Google.
-    """
+    """Carga datos y los guarda en memoria por 10 min."""
     if not SHEET_ID:
         return None, None, None
     
     try:
-        # Instanciamos el conector solo para la carga
         conn = SheetsConnector(spreadsheet_id=SHEET_ID)
         df_a = conn.get_data("Activos")
         df_m = conn.get_data("Mantenimiento")
@@ -108,7 +96,6 @@ st.markdown(f"""
     .dataframe {{ border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); background-color: {card_bg} !important; }}
     .streamlit-expanderHeader {{ background-color: {card_bg}; border-left: 4px solid {accent_color}; border-radius: 4px; font-weight: 600; }}
     p, span, div, label {{ color: {text_color}; }}
-    /* Corrección de visibilidad para Alertas */
     .stAlert {{ background-color: {alert_bg} !important; border: 1px solid #FFC107 !important; color: #FFC107 !important; }}
     .stAlert p {{ color: #FFD93D !important; font-weight: 500; }}
 </style>
@@ -151,10 +138,9 @@ if not st.session_state.authenticated:
             
             if submit:
                 if not SHEET_ID:
-                    st.error("❌ Error de Configuración: No se encontró GOOGLE_SHEET_ID en Secrets.")
+                    st.error("❌ Error: No se encontró GOOGLE_SHEET_ID en Secrets.")
                 else:
                     try:
-                        # Usamos conexión directa sin cache para login (seguridad)
                         temp_conn = SheetsConnector(spreadsheet_id=SHEET_ID)
                         user_mgr = UserManager(temp_conn)
                         
@@ -166,7 +152,7 @@ if not st.session_state.authenticated:
                             st.success("✅ Acceso concedido")
                             st.rerun()
                         else:
-                            st.error("❌ Email o contraseña incorrectos")
+                            st.error("❌ Credenciales incorrectas")
                     except Exception as e:
                         st.error(f"❌ Error de conexión: {str(e)}")
     st.stop()
@@ -179,12 +165,11 @@ st.caption(f"👤 {user_name} ({user_email})")
 st.markdown("---")
 
 # ============================================
-# INICIALIZAR LÓGICA DE NEGOCIO
+# INICIALIZAR LÓGICA
 # ============================================
 try:
     calculator = LifecycleCalculator()
     gemini_analyzer = GeminiAnalyzer(api_key=API_KEY) if API_KEY else None
-
 except Exception as e:
     st.error(f"❌ Error al inicializar módulos: {str(e)}")
     st.stop()
@@ -195,7 +180,6 @@ except Exception as e:
 st.sidebar.title("📊 Navegación")
 
 if st.sidebar.button("🔄 Recargar Datos", type="primary"):
-    # Limpiamos cache para forzar recarga fresca de Google Sheets
     load_data_from_sheets.clear()
     st.rerun()
 
@@ -217,7 +201,7 @@ view_mode = st.sidebar.radio(
 )
 
 # ============================================
-# CARGA DE DATOS (CON CACHE)
+# CARGA DE DATOS
 # ============================================
 with st.spinner("🔄 Obteniendo datos de flota..."):
     df_activos, df_mantenimiento, df_costos_ref = load_data_from_sheets()
@@ -351,50 +335,87 @@ elif view_mode == "Detalle por Activo":
     else:
         st.info("No hay registros de mantenimiento")
 
-# --- VISTA 4: ANÁLISIS IA ---
+# --- VISTA 4: ANÁLISIS IA (MEJORADA) ---
 elif view_mode == "Análisis IA":
-    st.subheader("🤖 Análisis con AI (Gemini)")
+    st.subheader("🤖 Análisis Inteligente & Visualización")
     
     if not gemini_analyzer:
-        st.warning("""
-        ⚠️ **No se ha detectado la GEMINI_API_KEY.**
-        
-        Verifica en tu `.streamlit/secrets.toml` que la clave esté correcta. 
-        Si usas un bloque `[gcp_service_account]`, asegúrate de que la API KEY esté definida.
-        """)
+        st.warning("⚠️ Configura GEMINI_API_KEY en Secrets para usar esta función")
         st.stop()
 
-    analysis_type = st.radio("Tipo de análisis", ["Resumen Ejecutivo", "Activo Específico", "Pregunta Personalizada"])
+    # Pestañas para separar lo visual (Python) de lo conversacional (IA)
+    tab1, tab2 = st.tabs(["📊 Gráficos y Métricas", "💬 Chat con IA"])
 
-    if analysis_type == "Resumen Ejecutivo":
-        if st.button("🚀 Generar Resumen", type="primary"):
-            with st.spinner("Gemini está analizando toda la flota..."):
-                try:
-                    summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
-                    st.markdown(summary)
-                except Exception as e:
-                    st.error(f"Error en Gemini: {str(e)}")
+    # --- TAB 1: INTELIGENCIA DE NEGOCIOS (PYTHON EXACTO) ---
+    with tab1:
+        st.markdown("### 💰 Evolución de Costos")
+        
+        if not df_mantenimiento.empty and 'fecha' in df_mantenimiento.columns:
+            # Crear copia para no afectar datos globales
+            df_chart = df_mantenimiento.copy()
+            
+            # Asegurar que existe costo total
+            if 'costo_mantenimiento' not in df_chart.columns:
+                if 'costo_repuestos' in df_chart.columns and 'costo_mano_obra' in df_chart.columns:
+                    df_chart['costo_mantenimiento'] = df_chart['costo_repuestos'] + df_chart['costo_mano_obra']
+                else:
+                    df_chart['costo_mantenimiento'] = 0
 
-    elif analysis_type == "Activo Específico":
-        selected_asset = st.selectbox("Selecciona un activo para analizar", df['id_activo'].tolist())
-        if st.button("🔍 Analizar Activo", type="primary"):
-            asset_data = df[df['id_activo'] == selected_asset].iloc[0]
-            with st.spinner(f"Analizando el activo {selected_asset}..."):
-                try:
-                    analysis = gemini_analyzer.analyze_asset(asset_data, df_mantenimiento, df_costos_ref)
-                    st.markdown(analysis)
-                except Exception as e:
-                    st.error(f"Error en Gemini: {str(e)}")
+            # 1. Gráfico por Mes
+            df_chart['periodo'] = df_chart['fecha'].dt.to_period('M').astype(str)
+            gastos_por_mes = df_chart.groupby('periodo')['costo_mantenimiento'].sum().reset_index()
+            
+            st.bar_chart(gastos_por_mes.set_index('periodo'), color=accent_color)
+            
+            # 2. Totales Exactos por Año (Métricas)
+            st.markdown("#### 📅 Resumen Exacto por Año")
+            df_chart['año'] = df_chart['fecha'].dt.year
+            gastos_por_ano = df_chart.groupby('año')['costo_mantenimiento'].sum()
+            
+            # Mostrar métricas dinámicas
+            cols = st.columns(len(gastos_por_ano))
+            for idx, (year, total) in enumerate(gastos_por_ano.items()):
+                with cols[idx % len(cols)]:
+                    st.metric(f"Gasto Total {year}", f"${total:,.0f}")
+        else:
+            st.info("No hay suficientes datos de fecha o costos para graficar.")
 
-    else:
-        question = st.text_area("Escribe tu pregunta sobre la flota", placeholder="Ej: ¿Qué camiones tienen un costo de mantenimiento superior al promedio?")
-        if st.button("💬 Consultar", type="primary") and question:
-            with st.spinner("Consultando a la base de conocimientos..."):
-                try:
-                    answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
-                    st.markdown(answer)
-                except Exception as e:
-                    st.error(f"Error en Gemini: {str(e)}")
+    # --- TAB 2: CONSULTOR IA (GEMINI) ---
+    with tab2:
+        analysis_type = st.radio(
+            "Tipo de consulta", 
+            ["Resumen Ejecutivo", "Activo Específico", "Pregunta Personalizada"]
+        )
+
+        if analysis_type == "Resumen Ejecutivo":
+            if st.button("🚀 Generar Resumen", type="primary"):
+                with st.spinner("Gemini está analizando la flota..."):
+                    try:
+                        summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
+                        st.markdown(summary)
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+        elif analysis_type == "Activo Específico":
+            selected_asset = st.selectbox("Selecciona un activo", df['id_activo'].tolist(), key="asset_select_ai")
+            if st.button("🔍 Analizar Activo", type="primary"):
+                asset_data = df[df['id_activo'] == selected_asset].iloc[0]
+                with st.spinner(f"Analizando {selected_asset}..."):
+                    try:
+                        analysis = gemini_analyzer.analyze_asset(asset_data, df_mantenimiento, df_costos_ref)
+                        st.markdown(analysis)
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+        else:
+            question = st.text_area("Pregunta a la IA", placeholder="Ej: ¿Qué pasó con el camión TOL-01 en septiembre?")
+            if st.button("💬 Consultar", type="primary") and question:
+                with st.spinner("Consultando base de conocimientos..."):
+                    try:
+                        answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
+                        st.markdown(answer)
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
 st.markdown("---")
 st.caption("Concremag S.A. - Sistema de Gestión de Activos | Powered by Gemini AI")
