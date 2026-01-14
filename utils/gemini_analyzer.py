@@ -6,14 +6,21 @@ class GeminiAnalyzer:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
 
+    def _ensure_costs(self, df):
+        """Asegura que exista la columna de costo total"""
+        if 'costo_mantenimiento' not in df.columns:
+            if 'costo_repuestos' in df.columns and 'costo_mano_obra' in df.columns:
+                df['costo_mantenimiento'] = df['costo_repuestos'] + df['costo_mano_obra']
+            else:
+                df['costo_mantenimiento'] = 0
+        return df
+
     def generate_executive_summary(self, activos_df, mantenimiento_df, costos_df):
-        """
-        Genera resumen ejecutivo con datos de las 3 hojas
-        """
+        mantenimiento_df = self._ensure_costs(mantenimiento_df.copy())
+        
         critical_assets = activos_df[activos_df['health_score'] < 40]
         avg_health = activos_df['health_score'].mean()
         
-        # Calcular métricas de mantenimiento
         total_mant_cost = mantenimiento_df['costo_mantenimiento'].sum() if not mantenimiento_df.empty else 0
         total_mant_events = len(mantenimiento_df)
 
@@ -23,122 +30,81 @@ Eres un consultor experto en gestión de activos industriales. Genera un resumen
 **FLOTA:**
 - Total de activos: {len(activos_df)}
 - Activos críticos (Health Score < 40): {len(critical_assets)}
-- Health Score promedio de la flota: {avg_health:.1f}%
-- Tipos de equipos: {activos_df['tipo_equipo'].unique().tolist()}
+- Health Score promedio: {avg_health:.1f}%
 
 **MANTENIMIENTO:**
-- Total de intervenciones registradas: {total_mant_events}
-- Costo total de mantenimiento: ${total_mant_cost:,.0f} CLP
+- Total de intervenciones: {total_mant_events}
+- Costo total acumulado: ${total_mant_cost:,.0f} CLP
 
 **ACTIVOS CRÍTICOS:**
 {critical_assets[['id_activo', 'tipo_equipo', 'health_score', 'accion']].to_string() if not critical_assets.empty else 'No hay activos críticos'}
 
-**HISTORIAL DE MANTENIMIENTO (últimos registros):**
-{mantenimiento_df.tail(10).to_string(index=False) if not mantenimiento_df.empty else 'Sin datos de mantenimiento'}
+**HISTORIAL RECIENTE:**
+{mantenimiento_df[['fecha', 'id_activo', 'tipo_mantenimiento', 'costo_mantenimiento']].tail(10).to_string(index=False) if not mantenimiento_df.empty else 'Sin datos'}
 
-Genera un resumen ejecutivo de 200-300 palabras con:
-1. Estado general de la flota
-2. Riesgos principales
-3. Recomendaciones prioritarias
-4. Impacto económico estimado
+Genera un resumen de 200 palabras enfocándote en gastos y riesgos.
 """
-
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"Error al generar resumen: {str(e)}"
+            return f"Error: {str(e)}"
 
     def analyze_asset(self, asset_data, mantenimiento_df, costos_df):
-        """
-        Analiza un activo específico con su historial de mantenimiento
-        """
-        # Filtrar mantenimientos del activo
+        mantenimiento_df = self._ensure_costs(mantenimiento_df.copy())
+        
         asset_mant = mantenimiento_df[mantenimiento_df['id_activo'] == asset_data['id_activo']]
         
-        # Calcular métricas de mantenimiento
         total_mant_cost = asset_mant['costo_mantenimiento'].sum() if not asset_mant.empty else 0
-        num_preventivos = len(asset_mant[asset_mant['tipo_mantenimiento'] == 'Preventivo']) if not asset_mant.empty else 0
-        num_correctivos = len(asset_mant[asset_mant['tipo_mantenimiento'] == 'Correctivo']) if not asset_mant.empty else 0
+        preventivos = len(asset_mant[asset_mant['tipo_mantenimiento'] == 'Preventivo'])
+        correctivos = len(asset_mant[asset_mant['tipo_mantenimiento'] == 'Correctivo'])
 
         prompt = f"""
-Analiza este activo industrial y genera un informe técnico:
+Analiza este activo:
+ID: {asset_data['id_activo']} ({asset_data['tipo_equipo']})
+Health Score: {asset_data['health_score']:.1f}%
+Acción: {asset_data['accion']}
 
-**DATOS DEL ACTIVO:**
-- ID: {asset_data['id_activo']}
-- Tipo: {asset_data['tipo_equipo']}
-- Marca/Modelo: {asset_data['marca']} {asset_data['modelo']}
-- Edad: {asset_data['edad_anos']} años
-- Health Score: {asset_data['health_score']:.1f}%
-- Horómetro: {asset_data['horometro_actual']:,.0f} hrs
-- RUL: {asset_data['rul_horas']:,.0f} hrs
-- Acción recomendada: {asset_data['accion']}
+**MANTENIMIENTO:**
+- Total eventos: {len(asset_mant)}
+- Preventivos: {preventivos} | Correctivos: {correctivos}
+- Gasto Total: ${total_mant_cost:,.0f} CLP
 
-**HISTORIAL DE MANTENIMIENTO:**
-- Total de mantenimientos: {len(asset_mant)}
-- Preventivos: {num_preventivos}
-- Correctivos: {num_correctivos}
-- Costo total de mantenimiento: ${total_mant_cost:,.0f} CLP
+**DETALLE:**
+{asset_mant[['fecha', 'descripcion', 'costo_mantenimiento']].tail(5).to_string(index=False) if not asset_mant.empty else 'Sin historial'}
 
-**ÚLTIMOS MANTENIMIENTOS:**
-{asset_mant.tail(5).to_string(index=False) if not asset_mant.empty else 'Sin historial de mantenimiento'}
-
-Genera un análisis de 150-200 palabras con:
-1. Diagnóstico del estado actual
-2. Factores de riesgo basados en el historial
-3. Recomendación técnica específica
-4. Proyección de costos futuros
+Diagnostica el estado y justifica el gasto realizado.
 """
-
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"Error al analizar activo: {str(e)}"
+            return f"Error: {str(e)}"
 
     def custom_query(self, activos_df, mantenimiento_df, costos_df, question):
-        """
-        Responde preguntas personalizadas con acceso a todas las hojas
-        NOTA: activos_df debe ser el DataFrame CON métricas calculadas (df)
-        """
-        # Preparar contexto completo con todas las columnas relevantes
-        # Verificar qué columnas existen para evitar errores
-        columnas_disponibles = ['id_activo', 'tipo_equipo', 'marca', 'modelo', 'edad_anos']
+        # Asegurar costos antes de convertir a string
+        mantenimiento_df = self._ensure_costs(mantenimiento_df.copy())
         
-        # Agregar columnas calculadas si existen
-        if 'health_score' in activos_df.columns:
-            columnas_disponibles.append('health_score')
-        if 'accion' in activos_df.columns:
-            columnas_disponibles.append('accion')
-        if 'horizonte_meses' in activos_df.columns:
-            columnas_disponibles.append('horizonte_meses')
+        # Seleccionar columnas clave para no saturar el prompt
+        cols_mant = ['fecha', 'id_activo', 'tipo_mantenimiento', 'descripcion', 'costo_repuestos', 'costo_mano_obra', 'costo_mantenimiento']
+        # Intersección para evitar error si falta alguna columna
+        cols_final = [c for c in cols_mant if c in mantenimiento_df.columns]
         
-        activos_context = activos_df[columnas_disponibles].to_string()
-        
+        mant_context = mantenimiento_df[cols_final].to_string(index=False) if not mantenimiento_df.empty else 'Sin datos'
+
         prompt = f"""
-Eres un experto en gestión de maquinaria pesada para construcción y hormigón.
+Eres experto en gestión de flotas. Responde usando ESTRICTAMENTE los datos provistos.
 
-**DATOS DE LA FLOTA:**
-{activos_context}
+**DATOS MANTENIMIENTO (Costos en CLP):**
+{mant_context}
 
-**HISTORIAL DE MANTENIMIENTO:**
-{mantenimiento_df.to_string(index=False) if not mantenimiento_df.empty else 'Sin datos de mantenimiento'}
-
-**COSTOS DE REFERENCIA:**
-{costos_df.to_string(index=False) if not costos_df.empty else 'Sin datos de costos'}
-
-**PREGUNTA DEL USUARIO:**
+**PREGUNTA:**
 {question}
 
-**INSTRUCCIONES:**
-- Responde de forma profesional, concisa y con recomendaciones accionables
-- Si la pregunta requiere cálculos (ej: "cuántos mantenimientos"), usa los datos del historial
-- Si la pregunta es sobre costos, suma los valores correspondientes
-- Si no hay suficientes datos, indícalo claramente
+Si preguntan por costos, suma los valores de la columna 'costo_mantenimiento' o 'costo_repuestos'/'costo_mano_obra'.
 """
-
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"Error al procesar consulta: {str(e)}"
+            return f"Error: {str(e)}"
