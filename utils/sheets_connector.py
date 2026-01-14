@@ -18,7 +18,7 @@ class SheetsConnector:
                 credentials_path, scopes=scopes
             )
         else:
-            # Asume que está en st.secrets si no se pasa path
+            # Asume que está en st.secrets
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=scopes
@@ -36,7 +36,6 @@ class SheetsConnector:
             # --- FUNCIÓN DE LIMPIEZA DE MONEDA CHILENA ---
             def clean_clp(val):
                 if isinstance(val, str):
-                    # Eliminar $, eliminar puntos de miles, reemplazar coma por punto
                     val = val.replace('$', '').replace('.', '').replace(',', '.')
                     return val.strip()
                 return val
@@ -46,7 +45,6 @@ class SheetsConnector:
                 numeric_cols = ['ano_compra', 'horometro_actual', 'valor_compra', 'valor_residual_estimado']
                 for col in numeric_cols:
                     if col in df.columns:
-                        # Aplicar limpieza antes de convertir
                         df[col] = df[col].apply(clean_clp)
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
@@ -58,11 +56,9 @@ class SheetsConnector:
                 numeric_cols = ['costo_repuestos', 'costo_mano_obra', 'horas_parada']
                 for col in numeric_cols:
                     if col in df.columns:
-                        # Aplicar limpieza crítica aquí
                         df[col] = df[col].apply(clean_clp)
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-                # Crear columna totalizadora para facilitar la vida a Gemini
                 if 'costo_repuestos' in df.columns and 'costo_mano_obra' in df.columns:
                     df['costo_mantenimiento'] = df['costo_repuestos'] + df['costo_mano_obra']
 
@@ -80,10 +76,19 @@ class SheetsConnector:
             return df
 
         except Exception as e:
+            # Si falla, devolvemos un DataFrame vacío para no romper la app
             print(f"Error al leer hoja {worksheet_name}: {str(e)}")
             return pd.DataFrame()
 
-    def update_data(self, df, worksheet_name):
-        ws = self.sheet.worksheet(worksheet_name)
-        ws.clear()
-        ws.update([df.columns.values.tolist()] + df.values.tolist())
+    def add_row(self, worksheet_name, row_data):
+        """
+        Agrega una nueva fila al final de la hoja.
+        row_data: Lista de valores [val1, val2, val3...]
+        """
+        try:
+            ws = self.sheet.worksheet(worksheet_name)
+            ws.append_row(row_data)
+            return True
+        except Exception as e:
+            st.error(f"Error escribiendo en Sheets: {str(e)}")
+            return False
