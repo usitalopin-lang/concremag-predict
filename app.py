@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
 from datetime import datetime
 import pytz
 import os
@@ -51,6 +53,72 @@ def load_data_from_sheets():
     except Exception as e:
         st.error(f"Error cargando datos: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+# ============================================
+# FUNCIONES DE VISUALIZACIÓN (GRÁFICOS)
+# ============================================
+def generar_grafico_ciclo_vida(asset_data, df_costos_ref, theme_mode):
+    """
+    Genera un gráfico de Plotly mostrando la curva de degradación teórica
+    vs la posición actual del activo.
+    """
+    # 1. Obtener referencia
+    ref = df_costos_ref[df_costos_ref['tipo_equipo'] == asset_data['tipo_equipo']]
+    if not ref.empty:
+        vida_util_esperada = ref['vida_util_esperada_horas'].values[0]
+    else:
+        vida_util_esperada = 15000 # Default
+
+    # Estimación horas/año
+    horas_promedio_anual = asset_data['horometro_actual'] / max(1, asset_data['edad_anos'])
+
+    # 2. Simular curva teórica (0 a 20 años)
+    ages = np.arange(0, 21, 1)
+    healths_teoricos = []
+
+    for age in ages:
+        # Lógica simplificada de degradación ideal
+        hypothetical_hours = age * horas_promedio_anual
+        uso_pct = min(hypothetical_hours / vida_util_esperada, 1.5)
+        score_uso_sim = max(0, 100 * (1 - (uso_pct ** 1.2)))
+        score_edad_sim = max(0, 100 * np.exp(-0.1 * age))
+        # Asumiendo confiabilidad perfecta (100)
+        theoretical_health = (score_uso_sim * 0.30) + (score_edad_sim * 0.20) + (100 * 0.50)
+        healths_teoricos.append(theoretical_health)
+
+    # 3. Construir gráfico
+    fig = go.Figure()
+
+    # Zonas de color
+    fig.add_hrect(y0=85, y1=100, line_width=0, fillcolor="rgba(40, 167, 69, 0.1)", layer="below")
+    fig.add_hrect(y0=60, y1=85, line_width=0, fillcolor="rgba(255, 193, 7, 0.1)", layer="below")
+    fig.add_hrect(y0=0, y1=60, line_width=0, fillcolor="rgba(220, 53, 69, 0.1)", layer="below")
+
+    # Curva Ideal
+    fig.add_trace(go.Scatter(
+        x=ages, y=healths_teoricos, mode='lines', name='Curva Ideal',
+        line=dict(color='rgba(200, 200, 200, 0.5)', width=2, dash='dash')
+    ))
+
+    # Punto Actual
+    color_punto = '#FF0000' if asset_data['health_score'] < 60 else ('#FFC107' if asset_data['health_score'] < 85 else '#28a745')
+    fig.add_trace(go.Scatter(
+        x=[asset_data['edad_anos']], y=[asset_data['health_score']],
+        mode='markers+text', name='Estado Actual',
+        text=[f"<b>{asset_data['health_score']:.1f}%</b>"], textposition="top center",
+        marker=dict(color=color_punto, size=15, line=dict(color='white', width=2))
+    ))
+
+    fig.update_layout(
+        title="Ciclo de Vida y Degradación",
+        xaxis_title="Edad (Años)", yaxis_title="Health Score (%)",
+        yaxis=dict(range=[0, 105]), xaxis=dict(range=[0, 20]),
+        template="plotly_dark" if theme_mode == 'dark' else "plotly_white",
+        hovermode="x unified",
+        margin=dict(l=20, r=20, t=60, b=20), height=350,
+        legend=dict(orientation="h", y=1.02, x=1, xanchor="right")
+    )
+    return fig
 
 # ============================================
 # GESTIÓN DE TEMA (DARK/LIGHT)
@@ -128,14 +196,12 @@ if 'authenticated' not in st.session_state:
 
 if not st.session_state.authenticated:
     st.title("🔐 Acceso al Sistema")
-    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         with st.form("login_form"):
             email = st.text_input("📧 Email", placeholder="tu@email.com")
             password = st.text_input("🔑 Contraseña", type="password", placeholder="Tu contraseña")
             submit = st.form_submit_button("Entrar", type="primary", use_container_width=True)
-            
             if submit:
                 if not SHEET_ID:
                     st.error("❌ Error: No se encontró GOOGLE_SHEET_ID en Secrets.")
@@ -143,7 +209,6 @@ if not st.session_state.authenticated:
                     try:
                         temp_conn = SheetsConnector(spreadsheet_id=SHEET_ID)
                         user_mgr = UserManager(temp_conn)
-                        
                         if user_mgr.verify_password(email, password):
                             user_info = user_mgr.get_user_info(email)
                             st.session_state.authenticated = True
@@ -160,7 +225,6 @@ if not st.session_state.authenticated:
 # Usuario logueado
 user_email = st.session_state.user_email
 user_name = st.session_state.user_name
-
 st.caption(f"👤 {user_name} ({user_email})")
 st.markdown("---")
 
@@ -178,7 +242,6 @@ except Exception as e:
 # SIDEBAR
 # ============================================
 st.sidebar.title("📊 Navegación")
-
 if st.sidebar.button("🔄 Recargar Datos", type="primary"):
     load_data_from_sheets.clear()
     st.rerun()
@@ -192,7 +255,6 @@ if st.sidebar.button("🚪 Cerrar Sesión"):
     st.session_state.user_email = None
     st.session_state.user_name = None
     st.rerun()
-
 st.sidebar.markdown("---")
 
 view_mode = st.sidebar.radio(
@@ -303,9 +365,15 @@ elif view_mode == "Detalle por Activo":
     with col1:
         st.metric("💚 Health Score", f"{asset_data['health_score']:.1f}/100")
     with col2:
-        st.metric("⏰ Horizonte", f"{asset_data['horizonte_meses']:.0f} meses")
+        st.metric("⏰ RUL Estimado", f"{asset_data['rul_horas']:,.0f} hrs")
     with col3:
         st.metric("📅 Edad", f"{asset_data['edad_anos']:.1f} años")
+
+    st.markdown("---")
+    # --- GRÁFICO CICLO DE VIDA (PLOTLY) ---
+    fig_lifecycle = generar_grafico_ciclo_vida(asset_data, df_costos_ref, st.session_state.theme)
+    st.plotly_chart(fig_lifecycle, use_container_width=True)
+    # --------------------------------------
 
     st.markdown("---")
     st.subheader("📋 Información Completa")
@@ -335,7 +403,7 @@ elif view_mode == "Detalle por Activo":
     else:
         st.info("No hay registros de mantenimiento")
 
-# --- VISTA 4: ANÁLISIS IA (MEJORADA) ---
+# --- VISTA 4: ANÁLISIS IA ---
 elif view_mode == "Análisis IA":
     st.subheader("🤖 Análisis Inteligente & Visualización")
     
@@ -343,18 +411,14 @@ elif view_mode == "Análisis IA":
         st.warning("⚠️ Configura GEMINI_API_KEY en Secrets para usar esta función")
         st.stop()
 
-    # Pestañas para separar lo visual (Python) de lo conversacional (IA)
     tab1, tab2 = st.tabs(["📊 Gráficos y Métricas", "💬 Chat con IA"])
 
     # --- TAB 1: INTELIGENCIA DE NEGOCIOS (PYTHON EXACTO) ---
     with tab1:
         st.markdown("### 💰 Evolución de Costos")
-        
         if not df_mantenimiento.empty and 'fecha' in df_mantenimiento.columns:
-            # Crear copia para no afectar datos globales
             df_chart = df_mantenimiento.copy()
-            
-            # Asegurar que existe costo total
+            # Asegurar columna de costos
             if 'costo_mantenimiento' not in df_chart.columns:
                 if 'costo_repuestos' in df_chart.columns and 'costo_mano_obra' in df_chart.columns:
                     df_chart['costo_mantenimiento'] = df_chart['costo_repuestos'] + df_chart['costo_mano_obra']
@@ -364,15 +428,12 @@ elif view_mode == "Análisis IA":
             # 1. Gráfico por Mes
             df_chart['periodo'] = df_chart['fecha'].dt.to_period('M').astype(str)
             gastos_por_mes = df_chart.groupby('periodo')['costo_mantenimiento'].sum().reset_index()
-            
             st.bar_chart(gastos_por_mes.set_index('periodo'), color=accent_color)
             
-            # 2. Totales Exactos por Año (Métricas)
+            # 2. Totales Exactos por Año
             st.markdown("#### 📅 Resumen Exacto por Año")
             df_chart['año'] = df_chart['fecha'].dt.year
             gastos_por_ano = df_chart.groupby('año')['costo_mantenimiento'].sum()
-            
-            # Mostrar métricas dinámicas
             cols = st.columns(len(gastos_por_ano))
             for idx, (year, total) in enumerate(gastos_por_ano.items()):
                 with cols[idx % len(cols)]:
@@ -389,7 +450,7 @@ elif view_mode == "Análisis IA":
 
         if analysis_type == "Resumen Ejecutivo":
             if st.button("🚀 Generar Resumen", type="primary"):
-                with st.spinner("Gemini está analizando la flota..."):
+                with st.spinner("Analizando flota..."):
                     try:
                         summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
                         st.markdown(summary)
@@ -397,7 +458,7 @@ elif view_mode == "Análisis IA":
                         st.error(f"Error: {e}")
 
         elif analysis_type == "Activo Específico":
-            selected_asset = st.selectbox("Selecciona un activo", df['id_activo'].tolist(), key="asset_select_ai")
+            selected_asset = st.selectbox("Selecciona un activo", df['id_activo'].tolist(), key="ai_select")
             if st.button("🔍 Analizar Activo", type="primary"):
                 asset_data = df[df['id_activo'] == selected_asset].iloc[0]
                 with st.spinner(f"Analizando {selected_asset}..."):
@@ -410,7 +471,7 @@ elif view_mode == "Análisis IA":
         else:
             question = st.text_area("Pregunta a la IA", placeholder="Ej: ¿Qué pasó con el camión TOL-01 en septiembre?")
             if st.button("💬 Consultar", type="primary") and question:
-                with st.spinner("Consultando base de conocimientos..."):
+                with st.spinner("Consultando..."):
                     try:
                         answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
                         st.markdown(answer)
