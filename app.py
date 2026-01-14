@@ -69,7 +69,7 @@ def generar_grafico_ciclo_vida(asset_data, df_costos_ref, theme_mode):
     else:
         vida_util_esperada = 15000 # Default
 
-    # Estimación horas/año
+    # Estimación horas/año para proyección
     horas_promedio_anual = asset_data['horometro_actual'] / max(1, asset_data['edad_anos'])
 
     # 2. Simular curva teórica (0 a 20 años)
@@ -77,19 +77,20 @@ def generar_grafico_ciclo_vida(asset_data, df_costos_ref, theme_mode):
     healths_teoricos = []
 
     for age in ages:
-        # Lógica simplificada de degradación ideal
+        # Lógica simplificada de degradación ideal (Confiabilidad perfecta)
         hypothetical_hours = age * horas_promedio_anual
         uso_pct = min(hypothetical_hours / vida_util_esperada, 1.5)
         score_uso_sim = max(0, 100 * (1 - (uso_pct ** 1.2)))
         score_edad_sim = max(0, 100 * np.exp(-0.1 * age))
-        # Asumiendo confiabilidad perfecta (100)
+        
+        # Asumiendo confiabilidad perfecta (100) para la curva ideal
         theoretical_health = (score_uso_sim * 0.30) + (score_edad_sim * 0.20) + (100 * 0.50)
         healths_teoricos.append(theoretical_health)
 
     # 3. Construir gráfico
     fig = go.Figure()
 
-    # Zonas de color
+    # Zonas de color (Semáforo)
     fig.add_hrect(y0=85, y1=100, line_width=0, fillcolor="rgba(40, 167, 69, 0.1)", layer="below")
     fig.add_hrect(y0=60, y1=85, line_width=0, fillcolor="rgba(255, 193, 7, 0.1)", layer="below")
     fig.add_hrect(y0=0, y1=60, line_width=0, fillcolor="rgba(220, 53, 69, 0.1)", layer="below")
@@ -273,6 +274,7 @@ if df_activos is None or df_activos.empty:
     st.stop()
 
 # Calcular métricas una sola vez
+# df contiene todas las columnas calculadas incluyendo 'health_score'
 df = calculator.calcular_metricas_completas(df_activos, df_mantenimiento, df_costos_ref)
 
 # ============================================
@@ -450,9 +452,10 @@ elif view_mode == "Análisis IA":
 
         if analysis_type == "Resumen Ejecutivo":
             if st.button("🚀 Generar Resumen", type="primary"):
-                with st.spinner("Analizando flota..."):
+                with st.spinner("Gemini está analizando la flota..."):
                     try:
-                        summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
+                        # CORRECCIÓN: Aquí enviamos 'df' (calculado) en lugar de 'df_activos'
+                        summary = gemini_analyzer.generate_executive_summary(df, df_mantenimiento, df_costos_ref)
                         st.markdown(summary)
                     except Exception as e:
                         st.error(f"Error: {e}")
