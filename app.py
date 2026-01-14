@@ -141,6 +141,53 @@ with col3:
 
 st.markdown("---")
 
+# ============================================
+# SISTEMA DE AUTENTICACIÓN
+# ============================================
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_email = None
+    st.session_state.user_name = None
+
+# Si no está autenticado, mostrar login
+if not st.session_state.authenticated:
+    st.title("🔐 Acceso al Sistema")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            email = st.text_input("📧 Email", placeholder="tu@email.com")
+            password = st.text_input("🔑 Contraseña", type="password", placeholder="Tu contraseña")
+            submit = st.form_submit_button("Entrar", type="primary", use_container_width=True)
+            
+            if submit:
+                # Inicializar conexión temporal para verificar usuario
+                try:
+                    GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
+                    temp_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
+                    from utils.user_manager import UserManager
+                    user_mgr = UserManager(temp_conn)
+                    
+                    if user_mgr.verify_password(email, password):
+                        user_info = user_mgr.get_user_info(email)
+                        st.session_state.authenticated = True
+                        st.session_state.user_email = email
+                        st.session_state.user_name = user_info['name']
+                        st.success("✅ Acceso concedido")
+                        st.rerun()
+                    else:
+                        st.error("❌ Email o contraseña incorrectos")
+                except Exception as e:
+                    st.error(f"Error de autenticación: {str(e)}")
+    st.stop()
+
+# Usuario autenticado
+user_email = st.session_state.user_email
+user_name = st.session_state.user_name
+
+st.caption(f"👤 {user_name} ({user_email})")
+st.markdown("---")
+
 # Inicializar conexiones
 try:
     GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
@@ -168,6 +215,12 @@ import pytz
 chile_tz = pytz.timezone('America/Punta_Arenas')
 ultima_actualizacion = datetime.now(chile_tz).strftime("%d/%m/%Y - %H:%M:%S")
 st.sidebar.caption(f"🕒 Última actualización:\n{ultima_actualizacion}")
+if st.sidebar.button("🚪 Cerrar Sesión"):
+    st.session_state.authenticated = False
+    st.session_state.user_email = None
+    st.session_state.user_name = None
+    st.rerun()
+
 st.sidebar.markdown("---")
 
 view_mode = st.sidebar.radio(
