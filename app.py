@@ -161,9 +161,13 @@ if not st.session_state.authenticated:
             submit = st.form_submit_button("Entrar", type="primary", use_container_width=True)
             
             if submit:
-                # Inicializar conexión temporal para verificar usuario
                 try:
                     GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
+                    
+                    if not GOOGLE_SHEET_ID:
+                        st.error("❌ Falta configurar GOOGLE_SHEET_ID en Secrets")
+                        st.stop()
+                    
                     temp_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
                     from utils.user_manager import UserManager
                     user_mgr = UserManager(temp_conn)
@@ -177,55 +181,16 @@ if not st.session_state.authenticated:
                         st.rerun()
                     else:
                         st.error("❌ Email o contraseña incorrectos")
+                        
                 except Exception as e:
-                    st.error(f"Error de autenticación: {str(e)}")
-    st.stop()
-
-# Usuario autenticado
-user_email = st.session_state.user_email
-user_name = st.session_state.user_name
-
-st.caption(f"👤 {user_name} ({user_email})")
-st.markdown("---")
-
-# ============================================
-# SISTEMA DE AUTENTICACIÓN
-# ============================================
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-    st.session_state.user_email = None
-    st.session_state.user_name = None
-
-# Si no está autenticado, mostrar login
-if not st.session_state.authenticated:
-    st.title("🔐 Acceso al Sistema")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        with st.form("login_form"):
-            email = st.text_input("📧 Email", placeholder="tu@email.com")
-            password = st.text_input("🔑 Contraseña", type="password", placeholder="Tu contraseña")
-            submit = st.form_submit_button("Entrar", type="primary", use_container_width=True)
-            
-            if submit:
-                # Inicializar conexión temporal para verificar usuario
-                try:
-                    GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
-                    temp_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
-                    from utils.user_manager import UserManager
-                    user_mgr = UserManager(temp_conn)
+                    st.error(f"❌ Error de autenticación: {str(e)}")
+                    st.info("**Verifica:**")
+                    st.write("1. Que la hoja 'Usuarios' exista en Google Sheet")
+                    st.write("2. Que el service account tenga acceso al Sheet")
+                    st.write("3. Que las columnas sean: email, name, role, company, password")
                     
-                    if user_mgr.verify_password(email, password):
-                        user_info = user_mgr.get_user_info(email)
-                        st.session_state.authenticated = True
-                        st.session_state.user_email = email
-                        st.session_state.user_name = user_info['name']
-                        st.success("✅ Acceso concedido")
-                        st.rerun()
-                    else:
-                        st.error("❌ Email o contraseña incorrectos")
-                except Exception as e:
-                    st.error(f"Error de autenticación: {str(e)}")
+                    with st.expander("🔧 Detalles técnicos del error"):
+                        st.code(str(e))
     st.stop()
 
 # Usuario autenticado
@@ -258,12 +223,13 @@ if st.sidebar.button("🔄 Recargar Datos", type="primary"):
     st.rerun()
 
 # Mostrar última actualización
-from datetime import datetime
 import pytz
 
 chile_tz = pytz.timezone('America/Punta_Arenas')
 ultima_actualizacion = datetime.now(chile_tz).strftime("%d/%m/%Y - %H:%M:%S")
 st.sidebar.caption(f"🕒 Última actualización:\n{ultima_actualizacion}")
+
+# Botón de logout
 if st.sidebar.button("🚪 Cerrar Sesión"):
     st.session_state.authenticated = False
     st.session_state.user_email = None
@@ -439,12 +405,11 @@ try:
         st.subheader("🔧 Historial de Mantenimiento")
         mant_activo = df_mantenimiento[df_mantenimiento['id_activo'] == selected_asset]
         if not mant_activo.empty:
-            # FIX: Agregar height fijo para evitar parpadeo
             st.dataframe(mant_activo, use_container_width=True, height=300)
         else:
             st.info("No hay registros de mantenimiento para este activo.")
 
-    # ANÁLISIS IA (CORREGIDO)
+    # ANÁLISIS IA
     elif view_mode == "Análisis IA":
         st.subheader("🤖 Análisis con AI")
 
@@ -460,7 +425,6 @@ try:
         if analysis_type == "Resumen Ejecutivo":
             if st.button("🚀 Generar Resumen Ejecutivo", type="primary"):
                 with st.spinner("Analizando con Gemini..."):
-                    # FIX: Pasar las 3 hojas
                     summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
                     st.markdown(summary)
 
@@ -473,7 +437,6 @@ try:
             if st.button("🔍 Analizar Activo", type="primary"):
                 asset_data = df[df['id_activo'] == selected_asset].iloc[0]
                 with st.spinner("Analizando con Gemini..."):
-                    # FIX: Pasar mantenimiento y costos
                     analysis = gemini_analyzer.analyze_asset(asset_data, df_mantenimiento, df_costos_ref)
                     st.markdown(analysis)
 
@@ -485,7 +448,6 @@ try:
 
             if st.button("💬 Consultar a Gemini", type="primary") and question:
                 with st.spinner("Consultando..."):
-                    # FIX: Pasar df (con métricas calculadas) en lugar de df_activos
                     answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
                     st.markdown(answer)
 
