@@ -162,11 +162,20 @@ if not st.session_state.authenticated:
             
             if submit:
                 try:
-                    GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
+                    # Intentar obtener el GOOGLE_SHEET_ID de diferentes formas
+                    GOOGLE_SHEET_ID = None
                     
+                    # Método 1: Directo
+                    if "GOOGLE_SHEET_ID" in st.secrets:
+                        GOOGLE_SHEET_ID = st.secrets["GOOGLE_SHEET_ID"]
+                    # Método 2: Con get
+                    elif hasattr(st.secrets, 'get'):
+                        GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
+                    
+                    # Si no se encuentra, usar el ID hardcodeado temporalmente
                     if not GOOGLE_SHEET_ID:
-                        st.error("❌ Falta configurar GOOGLE_SHEET_ID en Secrets")
-                        st.stop()
+                        GOOGLE_SHEET_ID = "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8"
+                        st.warning("⚠️ Usando ID de Sheet hardcodeado. Configura GOOGLE_SHEET_ID en Secrets.")
                     
                     temp_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
                     from utils.user_manager import UserManager
@@ -191,6 +200,8 @@ if not st.session_state.authenticated:
                     
                     with st.expander("🔧 Detalles técnicos del error"):
                         st.code(str(e))
+                        st.write("**Secrets disponibles:**")
+                        st.write(list(st.secrets.keys()))
     st.stop()
 
 # Usuario autenticado
@@ -204,8 +215,14 @@ st.markdown("---")
 # INICIALIZAR CONEXIONES (después del login)
 # ============================================
 try:
-    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
-    GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
+    # Obtener secrets con fallback
+    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") if hasattr(st.secrets, 'get') else st.secrets.get("GEMINI_API_KEY", None)
+    
+    GOOGLE_SHEET_ID = None
+    if "GOOGLE_SHEET_ID" in st.secrets:
+        GOOGLE_SHEET_ID = st.secrets["GOOGLE_SHEET_ID"]
+    else:
+        GOOGLE_SHEET_ID = "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8"
 
     sheets_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
     calculator = LifecycleCalculator()
