@@ -2,6 +2,7 @@
 Gestor de usuarios autorizados - Lee desde Google Sheets
 """
 import streamlit as st
+import hashlib
 
 class UserManager:
     def __init__(self, connector):
@@ -16,7 +17,7 @@ class UserManager:
     def load_users(self):
         """Carga usuarios desde Google Sheets"""
         try:
-            users_data = self.connector.get_sheet_data('Usuarios')
+            users_data = self.connector.get_data('Usuarios')
             
             permissions_map = {
                 'admin': ['view', 'edit', 'delete', 'manage_users'],
@@ -24,27 +25,43 @@ class UserManager:
                 'viewer': ['view']
             }
             
-            for row in users_data:
-                email = row.get('email', '').strip().lower()
+            for _, row in users_data.iterrows():
+                email = str(row.get('email', '')).strip().lower()
                 if email:
-                    role = row.get('role', 'viewer').strip().lower()
+                    role = str(row.get('role', 'viewer')).strip().lower()
+                    password_hash = str(row.get('password', '')).strip()
+                    
                     self.authorized_users[email] = {
-                        'name': row.get('name', '').strip(),
+                        'name': str(row.get('name', '')).strip(),
                         'role': role,
-                        'company': row.get('company', 'Concremag S.A.').strip(),
-                        'permissions': permissions_map.get(role, ['view'])
+                        'company': str(row.get('company', 'Concremag S.A.')).strip(),
+                        'permissions': permissions_map.get(role, ['view']),
+                        'password_hash': password_hash
                     }
         except Exception as e:
             # Fallback: usuario por defecto si falla la carga
             st.warning(f"⚠️ No se pudo cargar usuarios desde Google Sheets. Usando usuario por defecto.")
+            # Password por defecto: "admin123" -> hash
+            default_password_hash = hashlib.sha256("admin123".encode()).hexdigest()
             self.authorized_users = {
                 'cf.lopezgaete@gmail.com': {
                     'name': 'Cristopher Lopez',
                     'role': 'admin',
                     'company': 'Concremag S.A.',
-                    'permissions': ['view', 'edit', 'delete', 'manage_users']
+                    'permissions': ['view', 'edit', 'delete', 'manage_users'],
+                    'password_hash': default_password_hash
                 }
             }
+    
+    def verify_password(self, email, password):
+        """Verifica email + contraseña"""
+        email = email.lower().strip()
+        if email not in self.authorized_users:
+            return False
+        
+        user = self.authorized_users[email]
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        return password_hash == user['password_hash']
     
     def is_authorized(self, email):
         """Verifica si el email está autorizado"""
