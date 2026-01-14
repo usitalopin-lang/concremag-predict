@@ -2,6 +2,7 @@ import pandas as pd
 from google.oauth2 import service_account
 import gspread
 from datetime import datetime
+import streamlit as st
 
 class SheetsConnector:
     def __init__(self, credentials_path=None, spreadsheet_id=None):
@@ -17,7 +18,7 @@ class SheetsConnector:
                 credentials_path, scopes=scopes
             )
         else:
-            import streamlit as st
+            # Asume que está en st.secrets si no se pasa path
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=scopes
@@ -32,20 +33,38 @@ class SheetsConnector:
             data = ws.get_all_records()
             df = pd.DataFrame(data)
 
+            # --- FUNCIÓN DE LIMPIEZA DE MONEDA CHILENA ---
+            def clean_clp(val):
+                if isinstance(val, str):
+                    # Eliminar $, eliminar puntos de miles, reemplazar coma por punto
+                    val = val.replace('$', '').replace('.', '').replace(',', '.')
+                    return val.strip()
+                return val
+            # ---------------------------------------------
+
             if worksheet_name == "Activos":
                 numeric_cols = ['ano_compra', 'horometro_actual', 'valor_compra', 'valor_residual_estimado']
                 for col in numeric_cols:
                     if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        # Aplicar limpieza antes de convertir
+                        df[col] = df[col].apply(clean_clp)
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
                 current_year = datetime.now().year
-                df['edad_anos'] = current_year - df['ano_compra']
+                if 'ano_compra' in df.columns:
+                    df['edad_anos'] = current_year - df['ano_compra']
 
             elif worksheet_name == "Mantenimiento":
                 numeric_cols = ['costo_repuestos', 'costo_mano_obra', 'horas_parada']
                 for col in numeric_cols:
                     if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        # Aplicar limpieza crítica aquí
+                        df[col] = df[col].apply(clean_clp)
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+                # Crear columna totalizadora para facilitar la vida a Gemini
+                if 'costo_repuestos' in df.columns and 'costo_mano_obra' in df.columns:
+                    df['costo_mantenimiento'] = df['costo_repuestos'] + df['costo_mano_obra']
 
                 if 'fecha' in df.columns:
                     df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
@@ -55,7 +74,8 @@ class SheetsConnector:
                                'vida_util_esperada_horas', 'tasa_depreciacion_anual']
                 for col in numeric_cols:
                     if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        df[col] = df[col].apply(clean_clp)
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
             return df
 
