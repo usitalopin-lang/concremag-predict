@@ -82,26 +82,60 @@ Diagnostica el estado y justifica el gasto realizado.
             return f"Error: {str(e)}"
 
     def custom_query(self, activos_df, mantenimiento_df, costos_df, question):
-        # Asegurar costos antes de convertir a string
+        # 1. Preparar datos y asegurar costos
         mantenimiento_df = self._ensure_costs(mantenimiento_df.copy())
         
-        # Seleccionar columnas clave para no saturar el prompt
+        # 2. CALCULAR TOTALES ROBUSTOS (ANUAL Y MENSUAL)
+        resumen_calculado = "No hay datos suficientes para cálculos."
+        
+        if 'fecha' in mantenimiento_df.columns and not mantenimiento_df.empty:
+            try:
+                # A. Totales por Año
+                gastos_anuales = mantenimiento_df.groupby(mantenimiento_df['fecha'].dt.year)['costo_mantenimiento'].sum()
+                txt_anual = "\n".join([f"- Año {anio}: ${monto:,.0f} CLP" for anio, monto in gastos_anuales.items()])
+                
+                # B. Totales por Mes (Formato YYYY-MM)
+                # Creamos columna temporal periodo
+                mantenimiento_df['periodo'] = mantenimiento_df['fecha'].dt.to_period('M')
+                gastos_mensuales = mantenimiento_df.groupby('periodo')['costo_mantenimiento'].sum()
+                # Tomamos los últimos 24 meses para no saturar, o todos si son pocos
+                txt_mensual = "\n".join([f"- {periodo}: ${monto:,.0f} CLP" for periodo, monto in gastos_mensuales.items()])
+                
+                resumen_calculado = f"""
+                **TOTALES ANUALES (USAR ESTO PARA PREGUNTAS GENERALES):**
+                {txt_anual}
+                
+                **TOTALES MENSUALES (USAR ESTO PARA DETALLES DE FECHAS):**
+                {txt_mensual}
+                """
+            except Exception as e:
+                resumen_calculado = f"Error calculando totales: {str(e)}"
+
+        # 3. Preparar contexto de filas (Detalle individual)
+        # Limitamos a las ultimas 50 transacciones para no romper el límite de tokens si hay muchos datos
         cols_mant = ['fecha', 'id_activo', 'tipo_mantenimiento', 'descripcion', 'costo_repuestos', 'costo_mano_obra', 'costo_mantenimiento']
-        # Intersección para evitar error si falta alguna columna
         cols_final = [c for c in cols_mant if c in mantenimiento_df.columns]
         
-        mant_context = mantenimiento_df[cols_final].to_string(index=False) if not mantenimiento_df.empty else 'Sin datos'
+        # Ordenamos por fecha descendente para que vea lo más reciente primero
+        df_sorted = mantenimiento_df.sort_values('fecha', ascending=False).head(50)
+        mant_context = df_sorted[cols_final].to_string(index=False) if not df_sorted.empty else 'Sin datos'
 
         prompt = f"""
-Eres experto en gestión de flotas. Responde usando ESTRICTAMENTE los datos provistos.
+Eres un asistente analítico de datos preciso para Concremag S.A.
 
-**DATOS MANTENIMIENTO (Costos en CLP):**
+**DATOS PRE-CALCULADOS (VERDAD ABSOLUTA MATEMÁTICA):**
+{resumen_calculado}
+
+**DETALLE DE LOS ÚLTIMOS REGISTROS (Para contexto de qué se reparó):**
 {mant_context}
 
-**PREGUNTA:**
+**PREGUNTA DEL USUARIO:**
 {question}
 
-Si preguntan por costos, suma los valores de la columna 'costo_mantenimiento' o 'costo_repuestos'/'costo_mano_obra'.
+INSTRUCCIONES CLAVE:
+1. Prioridad TOTAL a la sección "DATOS PRE-CALCULADOS". Si te preguntan "¿Cuánto se gastó en septiembre 2025?", busca "2025-09" en la lista mensual y da ese valor exacto. NO intentes sumar filas manualmente.
+2. Si te preguntan por un año, usa el total anual pre-calculado.
+3. Si la pregunta es sobre el *detalle* (ej: "¿Qué se rompió?"), usa la tabla de detalle.
 """
         try:
             response = self.model.generate_content(prompt)
