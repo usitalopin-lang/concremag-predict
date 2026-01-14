@@ -216,13 +216,8 @@ st.markdown("---")
 # ============================================
 try:
     # Obtener secrets con fallback
-    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") if hasattr(st.secrets, 'get') else st.secrets.get("GEMINI_API_KEY", None)
-    
-    GOOGLE_SHEET_ID = None
-    if "GOOGLE_SHEET_ID" in st.secrets:
-        GOOGLE_SHEET_ID = st.secrets["GOOGLE_SHEET_ID"]
-    else:
-        GOOGLE_SHEET_ID = "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8"
+    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None)
+    GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID", "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8")
 
     sheets_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
     calculator = LifecycleCalculator()
