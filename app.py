@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import pytz
 from utils.sheets_connector import SheetsConnector
 from utils.lifecycle_calculator import LifecycleCalculator
 from utils.gemini_analyzer import GeminiAnalyzer
@@ -33,48 +34,36 @@ else:
 
 st.markdown(f"""
 <style>
-    /* Fondo principal */
     .stApp {{
         background-color: {bg_color};
     }}
-    
-    /* Tarjetas de métricas */
     [data-testid="stMetricValue"] {{
         font-size: 2.8rem;
         font-weight: 700;
         color: {accent_color};
     }}
-    
     [data-testid="stMetricLabel"] {{
         color: {text_color};
         font-size: 0.9rem;
         text-transform: uppercase;
     }}
-    
-    /* Títulos */
     h1 {{
         color: {accent_color} !important;
         font-size: 2.5rem !important;
         font-weight: 700 !important;
     }}
-    
     h2 {{
         color: {text_color} !important;
         font-size: 1.8rem !important;
     }}
-    
     h3 {{
         color: {accent_color} !important;
         font-size: 1.3rem !important;
     }}
-    
-    /* Sidebar */
     [data-testid="stSidebar"] {{
         background-color: {sidebar_bg};
         border-right: 2px solid {accent_color};
     }}
-    
-    /* Botones */
     .stButton>button {{
         background: linear-gradient(90deg, {accent_color} 0%, #00A8CC 100%);
         color: {bg_color};
@@ -87,45 +76,35 @@ st.markdown(f"""
         text-transform: uppercase;
         font-size: 0.9rem;
     }}
-    
     .stButton>button:hover {{
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
     }}
-    
-    /* Tablas */
     .dataframe {{
         border-radius: 8px;
         overflow: hidden;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         background-color: {card_bg} !important;
     }}
-    
-    /* Expanders */
     .streamlit-expanderHeader {{
         background-color: {card_bg};
         border-left: 4px solid {accent_color};
         border-radius: 4px;
         font-weight: 600;
     }}
-    
-    /* Texto general */
     p, span, div {{
         color: {text_color};
     }}
-    
-    /* Radio buttons en sidebar */
     [data-testid="stSidebar"] .stRadio > label {{
         color: {text_color};
     }}
-    
     [data-testid="stSidebar"] .stRadio > div {{
         color: {text_color};
     }}
 </style>
 """, unsafe_allow_html=True)
 
-# Header con logo y diseño PRO
+# Header
 col1, col2, col3 = st.columns([1, 5, 1])
 with col1:
     st.markdown("# 🏗️")
@@ -133,7 +112,6 @@ with col2:
     st.markdown("# Concremag S.A.")
     st.markdown("### 🤖 Sistema Inteligente de Gestión de Activos")
 with col3:
-    # Toggle de tema
     theme_icon = "🌙" if st.session_state.theme == 'dark' else "☀️"
     if st.button(theme_icon, key="theme_toggle"):
         toggle_theme()
@@ -142,14 +120,13 @@ with col3:
 st.markdown("---")
 
 # ============================================
-# SISTEMA DE AUTENTICACIÓN
+# AUTENTICACIÓN
 # ============================================
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user_email = None
     st.session_state.user_name = None
 
-# Si no está autenticado, mostrar login
 if not st.session_state.authenticated:
     st.title("🔐 Acceso al Sistema")
     
@@ -162,20 +139,9 @@ if not st.session_state.authenticated:
             
             if submit:
                 try:
-                    # Intentar obtener el GOOGLE_SHEET_ID de diferentes formas
-                    GOOGLE_SHEET_ID = None
-                    
-                    # Método 1: Directo
+                    GOOGLE_SHEET_ID = "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8"
                     if "GOOGLE_SHEET_ID" in st.secrets:
                         GOOGLE_SHEET_ID = st.secrets["GOOGLE_SHEET_ID"]
-                    # Método 2: Con get
-                    elif hasattr(st.secrets, 'get'):
-                        GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID")
-                    
-                    # Si no se encuentra, usar el ID hardcodeado temporalmente
-                    if not GOOGLE_SHEET_ID:
-                        GOOGLE_SHEET_ID = "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8"
-                        st.warning("⚠️ Usando ID de Sheet hardcodeado. Configura GOOGLE_SHEET_ID en Secrets.")
                     
                     temp_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
                     from utils.user_manager import UserManager
@@ -190,21 +156,10 @@ if not st.session_state.authenticated:
                         st.rerun()
                     else:
                         st.error("❌ Email o contraseña incorrectos")
-                        
                 except Exception as e:
-                    st.error(f"❌ Error de autenticación: {str(e)}")
-                    st.info("**Verifica:**")
-                    st.write("1. Que la hoja 'Usuarios' exista en Google Sheet")
-                    st.write("2. Que el service account tenga acceso al Sheet")
-                    st.write("3. Que las columnas sean: email, name, role, company, password")
-                    
-                    with st.expander("🔧 Detalles técnicos del error"):
-                        st.code(str(e))
-                        st.write("**Secrets disponibles:**")
-                        st.write(list(st.secrets.keys()))
+                    st.error(f"❌ Error: {str(e)}")
     st.stop()
 
-# Usuario autenticado
 user_email = st.session_state.user_email
 user_name = st.session_state.user_name
 
@@ -212,36 +167,35 @@ st.caption(f"👤 {user_name} ({user_email})")
 st.markdown("---")
 
 # ============================================
-# INICIALIZAR CONEXIONES (después del login)
+# INICIALIZAR CONEXIONES
 # ============================================
 try:
-    # Obtener secrets con fallback
-    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None)
-    GOOGLE_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID", "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8")
+    GOOGLE_SHEET_ID = "1F77Cdc4v7loovWbtm4pP3Q1ARYo1-9-fe-CWCYvSeR8"
+    GEMINI_API_KEY = None
+    
+    if "GOOGLE_SHEET_ID" in st.secrets:
+        GOOGLE_SHEET_ID = st.secrets["GOOGLE_SHEET_ID"]
+    if "GEMINI_API_KEY" in st.secrets:
+        GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
     sheets_conn = SheetsConnector(spreadsheet_id=GOOGLE_SHEET_ID)
     calculator = LifecycleCalculator()
     gemini_analyzer = GeminiAnalyzer(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 except Exception as e:
-    st.error(f"❌ Error al inicializar conexiones: {str(e)}")
+    st.error(f"❌ Error al inicializar: {str(e)}")
     st.stop()
 
 # Sidebar
 st.sidebar.title("📊 Navegación")
 
-# Botón de recarga con timestamp
 if st.sidebar.button("🔄 Recargar Datos", type="primary"):
     st.rerun()
-
-# Mostrar última actualización
-import pytz
 
 chile_tz = pytz.timezone('America/Punta_Arenas')
 ultima_actualizacion = datetime.now(chile_tz).strftime("%d/%m/%Y - %H:%M:%S")
 st.sidebar.caption(f"🕒 Última actualización:\n{ultima_actualizacion}")
 
-# Botón de logout
 if st.sidebar.button("🚪 Cerrar Sesión"):
     st.session_state.authenticated = False
     st.session_state.user_email = None
@@ -257,22 +211,20 @@ view_mode = st.sidebar.radio(
 
 # Cargar datos
 try:
-    with st.spinner("🔄 Cargando datos desde Google Sheets..."):
+    with st.spinner("🔄 Cargando datos..."):
         df_activos = sheets_conn.get_data("Activos")
         df_mantenimiento = sheets_conn.get_data("Mantenimiento")
         df_costos_ref = sheets_conn.get_data("Costos_Referencia")
 
     if df_activos.empty:
-        st.warning("⚠️ No hay datos en la hoja 'Activos'. Por favor, agrega información de activos.")
+        st.warning("⚠️ No hay datos en 'Activos'")
         st.stop()
 
-    # Calcular métricas consolidadas
     df = calculator.calcular_metricas_completas(df_activos, df_mantenimiento, df_costos_ref)
 
     # DASHBOARD
     if view_mode == "Dashboard":
         col1, col2, col3, col4 = st.columns(4)
-
         with col1:
             st.metric("🚛 Total Activos", len(df))
         with col2:
@@ -286,18 +238,13 @@ try:
             st.metric("⏰ Acción <12 meses", next_year)
 
         st.markdown("---")
-
-        # Tabla principal
         st.subheader("📊 Estado de Activos")
 
         display_df = df[['id_activo', 'tipo_equipo', 'marca', 'modelo', 'edad_anos', 
                          'health_score', 'horizonte_meses', 'accion']].copy()
-
-        # Formatear
         display_df['health_score'] = display_df['health_score'].round(1)
         display_df['horizonte_meses'] = display_df['horizonte_meses'].round(0)
         
-        # Colorear
         def color_health(val):
             if val < 40:
                 return 'background-color: #4A1F1F; color: #FF6B6B'
@@ -312,165 +259,135 @@ try:
         except:
             st.dataframe(display_df, use_container_width=True, height=400)
 
-        # Gráficos
         col1, col2 = st.columns(2)
-
         with col1:
             st.subheader("Distribución por Tipo")
-            tipo_counts = df['tipo_equipo'].value_counts()
-            st.bar_chart(tipo_counts)
-
+            st.bar_chart(df['tipo_equipo'].value_counts())
         with col2:
-            st.subheader("Health Score Promedio por Tipo")
-            health_by_type = df.groupby('tipo_equipo')['health_score'].mean().sort_values()
-            st.bar_chart(health_by_type)
+            st.subheader("Health Score Promedio")
+            st.bar_chart(df.groupby('tipo_equipo')['health_score'].mean().sort_values())
 
     # ACCIONES PRIORITARIAS
     elif view_mode == "Acciones Prioritarias":
-        st.subheader("🚨 Acciones Prioritarias - Ranking de Urgencia")
-
-        # Generar recomendaciones priorizadas
+        st.subheader("🚨 Acciones Prioritarias")
         df_recomendaciones = calculator.priorizar_flota(df)
 
-        # Métricas de impacto
         col1, col2, col3 = st.columns(3)
         with col1:
             total_criticos = len(df_recomendaciones[df_recomendaciones['prioridad'] <= 2])
             st.metric("🔴 Críticos/Urgentes", total_criticos)
         with col2:
             impacto_total = df_recomendaciones['impacto_economico_clp'].sum()
-            st.metric("💰 Impacto Económico Total", f"${impacto_total:,.0f}")
+            st.metric("💰 Impacto Total", f"${impacto_total:,.0f}")
         with col3:
             proximos_6m = len(df_recomendaciones[df_recomendaciones['horizonte_meses'] <= 6])
-            st.metric("⏰ Acción en 6 meses", proximos_6m)
+            st.metric("⏰ Acción 6 meses", proximos_6m)
 
         st.markdown("---")
 
-        # Mostrar top activos críticos
         for idx, rec in df_recomendaciones.iterrows():
-            if rec['prioridad'] == 1:
-                emoji = "🔴"
-            elif rec['prioridad'] == 2:
-                emoji = "🟠"
-            elif rec['prioridad'] == 3:
-                emoji = "🟡"
-            else:
-                emoji = "🟢"
-
+            emoji = "🔴" if rec['prioridad'] == 1 else "🟠" if rec['prioridad'] == 2 else "🟡" if rec['prioridad'] == 3 else "🟢"
             with st.expander(f"{emoji} {rec['accion']} - {rec['id_activo']} ({rec['tipo_equipo']})"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write(f"**Razón:** {rec['razon']}")
                     st.write(f"**Horizonte:** {rec['horizonte_meses']} meses")
                 with col2:
-                    st.write(f"**Impacto Económico:** ${rec['impacto_economico_clp']:,.0f} CLP")
+                    st.write(f"**Impacto:** ${rec['impacto_economico_clp']:,.0f} CLP")
                     st.write(f"**Prioridad:** {rec['prioridad']}")
                 st.info(rec['detalle'])
 
     # DETALLE POR ACTIVO
     elif view_mode == "Detalle por Activo":
         st.subheader("🔍 Análisis Detallado")
-
         selected_asset = st.selectbox(
             "Selecciona un activo",
             df['id_activo'].tolist(),
             format_func=lambda x: f"{x} - {df[df['id_activo']==x]['tipo_equipo'].values[0]}"
         )
-
         asset_data = df[df['id_activo'] == selected_asset].iloc[0]
 
         col1, col2, col3 = st.columns(3)
-
         with col1:
             st.metric("💚 Health Score", f"{asset_data['health_score']:.1f}/100")
         with col2:
-            st.metric("⏰ Horizonte de Acción", f"{asset_data['horizonte_meses']:.0f} meses")
+            st.metric("⏰ Horizonte", f"{asset_data['horizonte_meses']:.0f} meses")
         with col3:
             st.metric("📅 Edad", f"{asset_data['edad_anos']:.1f} años")
 
         st.markdown("---")
-
         st.subheader("📋 Información Completa")
         info_cols = st.columns(2)
-
         with info_cols[0]:
             st.write(f"**Tipo:** {asset_data['tipo_equipo']}")
             st.write(f"**Marca:** {asset_data['marca']}")
             st.write(f"**Modelo:** {asset_data['modelo']}")
-            st.write(f"**Año Compra:** {asset_data['ano_compra']}")
-
+            st.write(f"**Año:** {asset_data['ano_compra']}")
         with info_cols[1]:
-            st.write(f"**Horómetro Actual:** {asset_data['horometro_actual']:,.0f} hrs")
-            st.write(f"**Costo Mantención (último año):** ${asset_data['costo_mantencion_ultimo_ano']:,.0f}")
+            st.write(f"**Horómetro:** {asset_data['horometro_actual']:,.0f} hrs")
+            st.write(f"**Costo Mantención:** ${asset_data['costo_mantencion_ultimo_ano']:,.0f}")
             st.write(f"**Valor Residual:** ${asset_data['valor_residual_estimado']:,.0f}")
-            st.write(f"**RUL (Vida Restante):** {asset_data['rul_horas']:,.0f} hrs")
+            st.write(f"**RUL:** {asset_data['rul_horas']:,.0f} hrs")
 
         st.markdown("---")
         st.subheader("💡 Recomendación")
-
         st.markdown(f"### {asset_data['accion']}")
         st.write(f"**Razón:** {asset_data['razon']}")
         st.info(asset_data['detalle'])
 
-        # Historial de mantenimiento
         st.markdown("---")
         st.subheader("🔧 Historial de Mantenimiento")
         mant_activo = df_mantenimiento[df_mantenimiento['id_activo'] == selected_asset]
         if not mant_activo.empty:
             st.dataframe(mant_activo, use_container_width=True, height=300)
         else:
-            st.info("No hay registros de mantenimiento para este activo.")
+            st.info("No hay registros de mantenimiento")
 
     # ANÁLISIS IA
     elif view_mode == "Análisis IA":
         st.subheader("🤖 Análisis con AI")
-
         if not gemini_analyzer:
-            st.warning("⚠️ Configura GEMINI_API_KEY en Secrets para activar esta función.")
+            st.warning("⚠️ Configura GEMINI_API_KEY en Secrets")
             st.stop()
 
-        analysis_type = st.radio(
-            "Tipo de análisis",
-            ["Resumen Ejecutivo", "Activo Específico", "Pregunta Personalizada"]
-        )
+        analysis_type = st.radio("Tipo de análisis", ["Resumen Ejecutivo", "Activo Específico", "Pregunta Personalizada"])
 
         if analysis_type == "Resumen Ejecutivo":
-            if st.button("🚀 Generar Resumen Ejecutivo", type="primary"):
-                with st.spinner("Analizando con Gemini..."):
-                    summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
-                    st.markdown(summary)
+            if st.button("🚀 Generar Resumen", type="primary"):
+                with st.spinner("Analizando..."):
+                    try:
+                        summary = gemini_analyzer.generate_executive_summary(df_activos, df_mantenimiento, df_costos_ref)
+                        st.markdown(summary)
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
 
         elif analysis_type == "Activo Específico":
-            selected_asset = st.selectbox(
-                "Selecciona un activo",
-                df['id_activo'].tolist()
-            )
-
-            if st.button("🔍 Analizar Activo", type="primary"):
+            selected_asset = st.selectbox("Selecciona un activo", df['id_activo'].tolist())
+            if st.button("🔍 Analizar", type="primary"):
                 asset_data = df[df['id_activo'] == selected_asset].iloc[0]
-                with st.spinner("Analizando con Gemini..."):
-                    analysis = gemini_analyzer.analyze_asset(asset_data, df_mantenimiento, df_costos_ref)
-                    st.markdown(analysis)
+                with st.spinner("Analizando..."):
+                    try:
+                        analysis = gemini_analyzer.analyze_asset(asset_data, df_mantenimiento, df_costos_ref)
+                        st.markdown(analysis)
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
 
-        else:  # Pregunta Personalizada
-            question = st.text_area(
-                "Escribe tu pregunta sobre la flota",
-                placeholder="Ej: ¿Cuántos mantenimientos tuvo el camión tolva 01 en 2025?"
-            )
-
-            if st.button("💬 Consultar a Gemini", type="primary") and question:
+        else:
+            question = st.text_area("Escribe tu pregunta", placeholder="Ej: ¿Cuántos mantenimientos tuvo el camión tolva 01?")
+            if st.button("💬 Consultar", type="primary") and question:
                 with st.spinner("Consultando..."):
-                    answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
-                    st.markdown(answer)
+                    try:
+                        answer = gemini_analyzer.custom_query(df, df_mantenimiento, df_costos_ref, question)
+                        st.markdown(answer)
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
 
 except Exception as e:
-    st.error(f"❌ Error al cargar datos: {str(e)}")
-    st.info("**Posibles causas:**")
-    st.write("1. Verifica que las credenciales en 'Secrets' estén correctas")
-    st.write("2. Verifica que el Google Sheet esté compartido con la service account")
-    st.write("3. Verifica que las hojas se llamen exactamente: 'Activos', 'Mantenimiento', 'Costos_Referencia'")
-    st.write("4. Verifica que Google Sheets API y Google Drive API estén habilitadas")
+    st.error(f"❌ Error: {str(e)}")
+    st.info("**Verifica:**")
+    st.write("1. Credenciales en Secrets")
+    st.write("2. Sheet compartido con service account")
+    st.write("3. Hojas: 'Activos', 'Mantenimiento', 'Costos_Referencia'")
 
-# Footer
 st.markdown("---")
 st.caption("Concremag S.A. - Sistema de Gestión de Activos | Powered by Gemini AI")
