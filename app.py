@@ -258,9 +258,10 @@ if st.sidebar.button("🚪 Cerrar Sesión"):
     st.rerun()
 st.sidebar.markdown("---")
 
+# Menú con todas las opciones
 view_mode = st.sidebar.radio(
     "Selecciona una vista",
-    ["Dashboard", "Acciones Prioritarias", "Detalle por Activo", "Análisis IA"]
+    ["Dashboard", "Acciones Prioritarias", "Detalle por Activo", "Análisis IA", "📝 Ingreso de Datos"]
 )
 
 # ============================================
@@ -273,8 +274,7 @@ if df_activos is None or df_activos.empty:
     st.warning("⚠️ No se pudieron cargar los datos o la hoja 'Activos' está vacía.")
     st.stop()
 
-# Calcular métricas una sola vez
-# df contiene todas las columnas calculadas incluyendo 'health_score'
+# Calcular métricas una sola vez (Health Score 2.0 y Financieras)
 df = calculator.calcular_metricas_completas(df_activos, df_mantenimiento, df_costos_ref)
 
 # ============================================
@@ -480,6 +480,91 @@ elif view_mode == "Análisis IA":
                         st.markdown(answer)
                     except Exception as e:
                         st.error(f"Error: {e}")
+
+# --- VISTA 5: INGRESO DE DATOS (NUEVO) ---
+elif view_mode == "📝 Ingreso de Datos":
+    st.subheader("📝 Registro Seguro de Datos")
+    st.info("Los datos ingresados aquí se guardan directamente en Google Sheets y no se pueden borrar desde esta interfaz.")
+
+    tab_mant, tab_asset = st.tabs(["🔧 Registrar Mantenimiento", "🚛 Nuevo Activo"])
+
+    # --- FORMULARIO 1: NUEVO MANTENIMIENTO ---
+    with tab_mant:
+        with st.form("form_mantenimiento", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Dropdown inteligente: Solo muestra activos existentes
+                id_activo = st.selectbox("Seleccionar Activo", df['id_activo'].unique())
+                fecha = st.date_input("Fecha del Evento", datetime.now())
+                tipo = st.selectbox("Tipo Mantenimiento", ["Preventivo", "Correctivo", "Predictivo"])
+            
+            with col2:
+                costo_rep = st.number_input("Costo Repuestos (CLP)", min_value=0, step=10000)
+                costo_mo = st.number_input("Costo Mano de Obra (CLP)", min_value=0, step=10000)
+                horas_parada = st.number_input("Horas de Parada", min_value=0, step=1)
+
+            descripcion = st.text_area("Descripción detallada del trabajo realizado")
+            
+            submitted = st.form_submit_button("💾 Guardar Registro", type="primary")
+            
+            if submitted:
+                # Preparamos la fila tal cual la espera Google Sheets
+                fecha_str = fecha.strftime("%d/%m/%Y")
+                
+                # Orden: id_activo, fecha, tipo, descripcion, repuestos, mano_obra, horas
+                row_data = [
+                    id_activo, 
+                    fecha_str, 
+                    tipo, 
+                    descripcion, 
+                    costo_rep, 
+                    costo_mo, 
+                    horas_parada
+                ]
+                
+                # Guardar usando el conector actualizado
+                conn = SheetsConnector(spreadsheet_id=SHEET_ID)
+                if conn.add_row("Mantenimiento", row_data):
+                    st.success(f"✅ Mantenimiento para {id_activo} guardado exitosamente!")
+                    load_data_from_sheets.clear() # Limpiar caché para ver cambios
+                else:
+                    st.error("❌ Error al conectar con Google Sheets")
+
+    # --- FORMULARIO 2: NUEVO ACTIVO ---
+    with tab_asset:
+        with st.form("form_activo", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                new_id = st.text_input("ID Nuevo Activo (Ej: TOL-05)").upper()
+                tipo_eq = st.selectbox("Tipo Equipo", ["Camión Tolva", "Excavadora", "Cargador", "Mixer", "Retroexcavadora"])
+                marca = st.text_input("Marca")
+                modelo = st.text_input("Modelo")
+            with col2:
+                ano = st.number_input("Año Compra", min_value=1990, max_value=2030, value=2024)
+                horometro = st.number_input("Horómetro Inicial", min_value=0)
+                valor_compra = st.number_input("Valor Compra (CLP)", min_value=0)
+                valor_residual = st.number_input("Valor Residual Estimado (CLP)", min_value=0)
+
+            submitted_asset = st.form_submit_button("💾 Crear Nuevo Activo", type="primary")
+            
+            if submitted_asset:
+                if new_id in df['id_activo'].values:
+                    st.error("⚠️ Ese ID de activo ya existe en la base de datos.")
+                elif not new_id:
+                    st.error("⚠️ Debes ingresar un ID válido.")
+                else:
+                    # Orden: id, tipo, marca, modelo, año, horometro, valor_c, valor_r
+                    row_data = [
+                        new_id, tipo_eq, marca, modelo, ano, horometro, valor_compra, valor_residual
+                    ]
+                    
+                    conn = SheetsConnector(spreadsheet_id=SHEET_ID)
+                    if conn.add_row("Activos", row_data):
+                        st.success(f"✅ Activo {new_id} creado exitosamente!")
+                        load_data_from_sheets.clear()
+                    else:
+                        st.error("❌ Error al guardar en Google Sheets")
 
 st.markdown("---")
 st.caption("Concremag S.A. - Sistema de Gestión de Activos | Powered by Gemini AI")
