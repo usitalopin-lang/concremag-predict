@@ -18,7 +18,6 @@ class SheetsConnector:
                 credentials_path, scopes=scopes
             )
         else:
-            # Asume que está en st.secrets
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=scopes
@@ -33,13 +32,12 @@ class SheetsConnector:
             data = ws.get_all_records()
             df = pd.DataFrame(data)
 
-            # --- FUNCIÓN DE LIMPIEZA DE MONEDA CHILENA ---
+            # --- LIMPIEZA DE MONEDA ---
             def clean_clp(val):
                 if isinstance(val, str):
                     val = val.replace('$', '').replace('.', '').replace(',', '.')
                     return val.strip()
                 return val
-            # ---------------------------------------------
 
             if worksheet_name == "Activos":
                 numeric_cols = ['ano_compra', 'horometro_actual', 'valor_compra', 'valor_residual_estimado']
@@ -47,7 +45,7 @@ class SheetsConnector:
                     if col in df.columns:
                         df[col] = df[col].apply(clean_clp)
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
+                
                 current_year = datetime.now().year
                 if 'ano_compra' in df.columns:
                     df['edad_anos'] = current_year - df['ano_compra']
@@ -76,18 +74,29 @@ class SheetsConnector:
             return df
 
         except Exception as e:
-            # Si falla, devolvemos un DataFrame vacío para no romper la app
-            print(f"Error al leer hoja {worksheet_name}: {str(e)}")
+            print(f"Error lectura {worksheet_name}: {e}")
             return pd.DataFrame()
 
     def add_row(self, worksheet_name, row_data):
         """
-        Agrega una nueva fila al final de la hoja.
-        row_data: Lista de valores [val1, val2, val3...]
+        Busca la primera fila disponible y escribe en ella, 
+        respetando el formato existente.
         """
         try:
             ws = self.sheet.worksheet(worksheet_name)
-            ws.append_row(row_data)
+            
+            # 1. Traemos solo la columna A (IDs) para contar cuántas filas reales hay
+            # col_values(1) se detiene en el último valor escrito, ignora formatos vacíos
+            col_ids = ws.col_values(1)
+            
+            # 2. La siguiente fila disponible es el largo de la columna + 1
+            next_row = len(col_ids) + 1
+            
+            # 3. Usamos 'update' en lugar de 'append_row'
+            # Esto escribe DENTRO de la celda existente (respetando tus colores y dropdowns)
+            # range_name ej: "A21"
+            ws.update(range_name=f"A{next_row}", values=[row_data])
+            
             return True
         except Exception as e:
             st.error(f"Error escribiendo en Sheets: {str(e)}")
