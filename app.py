@@ -58,50 +58,29 @@ def load_data_from_sheets():
 # FUNCIONES DE VISUALIZACIÓN (GRÁFICOS)
 # ============================================
 def generar_grafico_ciclo_vida(asset_data, df_costos_ref, theme_mode):
-    """
-    Genera un gráfico de Plotly mostrando la curva de degradación teórica
-    vs la posición actual del activo.
-    """
-    # 1. Obtener referencia
+    """Genera gráfico de curva de degradación."""
     ref = df_costos_ref[df_costos_ref['tipo_equipo'] == asset_data['tipo_equipo']]
-    if not ref.empty:
-        vida_util_esperada = ref['vida_util_esperada_horas'].values[0]
-    else:
-        vida_util_esperada = 15000 # Default
-
-    # Estimación horas/año para proyección
+    vida_util_esperada = ref['vida_util_esperada_horas'].values[0] if not ref.empty else 15000
     horas_promedio_anual = asset_data['horometro_actual'] / max(1, asset_data['edad_anos'])
 
-    # 2. Simular curva teórica (0 a 20 años)
     ages = np.arange(0, 21, 1)
     healths_teoricos = []
 
     for age in ages:
-        # Lógica simplificada de degradación ideal (Confiabilidad perfecta)
         hypothetical_hours = age * horas_promedio_anual
         uso_pct = min(hypothetical_hours / vida_util_esperada, 1.5)
         score_uso_sim = max(0, 100 * (1 - (uso_pct ** 1.2)))
         score_edad_sim = max(0, 100 * np.exp(-0.1 * age))
-        
-        # Asumiendo confiabilidad perfecta (100) para la curva ideal
         theoretical_health = (score_uso_sim * 0.30) + (score_edad_sim * 0.20) + (100 * 0.50)
         healths_teoricos.append(theoretical_health)
 
-    # 3. Construir gráfico
     fig = go.Figure()
-
-    # Zonas de color (Semáforo)
     fig.add_hrect(y0=85, y1=100, line_width=0, fillcolor="rgba(40, 167, 69, 0.1)", layer="below")
     fig.add_hrect(y0=60, y1=85, line_width=0, fillcolor="rgba(255, 193, 7, 0.1)", layer="below")
     fig.add_hrect(y0=0, y1=60, line_width=0, fillcolor="rgba(220, 53, 69, 0.1)", layer="below")
 
-    # Curva Ideal
-    fig.add_trace(go.Scatter(
-        x=ages, y=healths_teoricos, mode='lines', name='Curva Ideal',
-        line=dict(color='rgba(200, 200, 200, 0.5)', width=2, dash='dash')
-    ))
-
-    # Punto Actual
+    fig.add_trace(go.Scatter(x=ages, y=healths_teoricos, mode='lines', name='Curva Ideal', line=dict(color='rgba(200, 200, 200, 0.5)', width=2, dash='dash')))
+    
     color_punto = '#FF0000' if asset_data['health_score'] < 60 else ('#FFC107' if asset_data['health_score'] < 85 else '#28a745')
     fig.add_trace(go.Scatter(
         x=[asset_data['edad_anos']], y=[asset_data['health_score']],
@@ -122,7 +101,7 @@ def generar_grafico_ciclo_vida(asset_data, df_costos_ref, theme_mode):
     return fig
 
 # ============================================
-# GESTIÓN DE TEMA (DARK/LIGHT)
+# GESTIÓN DE TEMA
 # ============================================
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'
@@ -194,6 +173,7 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user_email = None
     st.session_state.user_name = None
+    st.session_state.user_role = None
 
 if not st.session_state.authenticated:
     st.title("🔐 Acceso al Sistema")
@@ -215,6 +195,8 @@ if not st.session_state.authenticated:
                             st.session_state.authenticated = True
                             st.session_state.user_email = email
                             st.session_state.user_name = user_info['name']
+                            # --- AQUÍ GUARDAMOS EL ROL ---
+                            st.session_state.user_role = user_info['role']
                             st.success("✅ Acceso concedido")
                             st.rerun()
                         else:
@@ -226,7 +208,11 @@ if not st.session_state.authenticated:
 # Usuario logueado
 user_email = st.session_state.user_email
 user_name = st.session_state.user_name
-st.caption(f"👤 {user_name} ({user_email})")
+user_role = st.session_state.user_role
+
+# Header personalizado con Rol
+role_emoji = "👑" if user_role == 'admin' else ("👔" if user_role == 'gerente' else "👷")
+st.caption(f"{role_emoji} {user_name} | Rol: {user_role.upper()} | {user_email}")
 st.markdown("---")
 
 # ============================================
@@ -240,29 +226,46 @@ except Exception as e:
     st.stop()
 
 # ============================================
-# SIDEBAR
+# SIDEBAR CON ROLES
 # ============================================
 st.sidebar.title("📊 Navegación")
+
 if st.sidebar.button("🔄 Recargar Datos", type="primary"):
     load_data_from_sheets.clear()
     st.rerun()
 
 chile_tz = pytz.timezone('America/Punta_Arenas')
 ultima_actualizacion = datetime.now(chile_tz).strftime("%d/%m/%Y - %H:%M:%S")
-st.sidebar.caption(f"🕒 Última actualización:\n{ultima_actualizacion}")
+st.sidebar.caption(f"🕒 Actualizado:\n{ultima_actualizacion}")
 
 if st.sidebar.button("🚪 Cerrar Sesión"):
     st.session_state.authenticated = False
     st.session_state.user_email = None
     st.session_state.user_name = None
+    st.session_state.user_role = None
     st.rerun()
 st.sidebar.markdown("---")
 
-# Menú con todas las opciones
-view_mode = st.sidebar.radio(
-    "Selecciona una vista",
-    ["Dashboard", "Acciones Prioritarias", "Detalle por Activo", "Análisis IA", "📝 Ingreso de Datos"]
-)
+# --- LÓGICA DE MENÚ SEGÚN ROL ---
+menu_options = []
+
+if user_role == 'admin':
+    # Admin ve todo
+    menu_options = ["Dashboard", "Acciones Prioritarias", "Detalle por Activo", "Análisis IA", "📝 Ingreso de Datos"]
+
+elif user_role == 'gerente':
+    # Gerente: Estrategia y Finanzas (Sin carga operativa)
+    menu_options = ["Dashboard", "Acciones Prioritarias", "Análisis IA"]
+
+elif user_role == 'operador':
+    # Operador: Operativa y Carga (Sin estrategia financiera/IA)
+    menu_options = ["Dashboard", "Detalle por Activo", "📝 Ingreso de Datos"]
+
+else:
+    # Por defecto básico
+    menu_options = ["Dashboard", "Detalle por Activo"]
+
+view_mode = st.sidebar.radio("Selecciona una vista", menu_options)
 
 # ============================================
 # CARGA DE DATOS
@@ -274,7 +277,7 @@ if df_activos is None or df_activos.empty:
     st.warning("⚠️ No se pudieron cargar los datos o la hoja 'Activos' está vacía.")
     st.stop()
 
-# Calcular métricas una sola vez (Health Score 2.0 y Financieras)
+# Calcular métricas una sola vez
 df = calculator.calcular_metricas_completas(df_activos, df_mantenimiento, df_costos_ref)
 
 # ============================================
@@ -454,7 +457,7 @@ elif view_mode == "Análisis IA":
             if st.button("🚀 Generar Resumen", type="primary"):
                 with st.spinner("Gemini está analizando la flota..."):
                     try:
-                        # CORRECCIÓN: Aquí enviamos 'df' (calculado) en lugar de 'df_activos'
+                        # CORRECCIÓN: Aquí enviamos 'df' (calculado)
                         summary = gemini_analyzer.generate_executive_summary(df, df_mantenimiento, df_costos_ref)
                         st.markdown(summary)
                     except Exception as e:
@@ -509,7 +512,6 @@ elif view_mode == "📝 Ingreso de Datos":
             submitted = st.form_submit_button("💾 Guardar Registro", type="primary")
             
             if submitted:
-                # Preparamos la fila tal cual la espera Google Sheets
                 fecha_str = fecha.strftime("%d/%m/%Y")
                 
                 # Orden: id_activo, fecha, tipo, descripcion, repuestos, mano_obra, horas
@@ -523,11 +525,10 @@ elif view_mode == "📝 Ingreso de Datos":
                     horas_parada
                 ]
                 
-                # Guardar usando el conector actualizado
                 conn = SheetsConnector(spreadsheet_id=SHEET_ID)
                 if conn.add_row("Mantenimiento", row_data):
                     st.success(f"✅ Mantenimiento para {id_activo} guardado exitosamente!")
-                    load_data_from_sheets.clear() # Limpiar caché para ver cambios
+                    load_data_from_sheets.clear()
                 else:
                     st.error("❌ Error al conectar con Google Sheets")
 
